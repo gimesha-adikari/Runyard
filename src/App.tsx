@@ -1,6 +1,7 @@
 import { Routes, Route } from 'react-router-dom';
 import { Sidebar } from './components/Sidebar';
 import { CommandPalette } from './components/CommandPalette';
+import { ToastContainer } from './components/ToastContainer';
 import { OverviewPage } from './pages/OverviewPage';
 import { ProjectsPage } from './pages/ProjectsPage';
 import { ProjectDetailPage } from './pages/ProjectDetailPage';
@@ -21,6 +22,7 @@ export default function App() {
         </Routes>
       </main>
       <CommandPalette />
+      <ToastContainer />
     </div>
   );
 }

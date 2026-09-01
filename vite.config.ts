@@ -12,6 +12,18 @@ export default defineConfig({
     },
   },
   clearScreen: false,
+  build: {
+    chunkSizeWarningLimit: 1000,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'vendor-react': ['react', 'react-dom', 'react-router-dom', '@tanstack/react-query', 'zustand'],
+          'vendor-xterm': ['@xterm/xterm', '@xterm/addon-fit'],
+          'vendor-icons': ['lucide-react'],
+        },
+      },
+    },
+  },
   server: {
     port: 1420,
     strictPort: true,

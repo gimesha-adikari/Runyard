@@ -11,11 +11,31 @@ export function formatRelativeTime(dateStr: string | null): string {
   const now = new Date();
   const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
 
+  if (diffInSeconds < 0) return 'Just now';
   if (diffInSeconds < 60) return 'Just now';
-  if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)} minutes ago`;
-  if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)} hours ago`;
-  if (diffInSeconds < 2592000) return `${Math.floor(diffInSeconds / 86400)} days ago`;
+  if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`;
+  if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h ago`;
+  if (diffInSeconds < 2592000) return `${Math.floor(diffInSeconds / 86400)}d ago`;
   return date.toLocaleDateString();
+}
+
+export function formatElapsedDuration(startedAt: string | null): string {
+  if (!startedAt) return '0s';
+  const start = new Date(startedAt).getTime();
+  const now = Date.now();
+  const elapsedSec = Math.max(0, Math.floor((now - start) / 1000));
+
+  const hours = Math.floor(elapsedSec / 3600);
+  const minutes = Math.floor((elapsedSec % 3600) / 60);
+  const seconds = elapsedSec % 60;
+
+  if (hours > 0) {
+    return `${hours}h ${minutes}m ${seconds}s`;
+  }
+  if (minutes > 0) {
+    return `${minutes}m ${seconds}s`;
+  }
+  return `${seconds}s`;
 }
 
 export function getProjectTypeIcon(type: string | null): string {
@@ -55,7 +75,7 @@ export function getStatusColor(status: string): string {
   }
 }
 
-export function truncatePath(path: string, maxLen: number = 40): string {
+export function truncatePath(path: string, maxLen: number = 42): string {
   if (path.length <= maxLen) return path;
   const parts = path.split(/[/\\]/);
   if (parts.length <= 2) return path.substring(0, maxLen) + '...';
