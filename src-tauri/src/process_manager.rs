@@ -135,7 +135,11 @@ impl ProcessManager {
                     };
                     let mut procs = procs_clone.lock().await;
                     if let Some(mp) = procs.get_mut(&pid_clone_wait) {
-                        mp.info.status = proc_status;
+                        if mp.info.status == ProcessStatus::Stopping || mp.info.status == ProcessStatus::Stopped {
+                            mp.info.status = ProcessStatus::Stopped;
+                        } else {
+                            mp.info.status = proc_status;
+                        }
                         mp.info.exit_code = exit_code;
                     }
                 }

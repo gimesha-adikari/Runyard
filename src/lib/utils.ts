@@ -46,7 +46,10 @@ export function getStatusColor(status: string): string {
     case 'Failed':
       return 'bg-red-500';
     case 'Starting':
+    case 'Stopping':
       return 'bg-amber-500';
+    case 'Exited':
+      return 'bg-zinc-600';
     default:
       return 'bg-zinc-500';
   }

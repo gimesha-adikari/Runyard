@@ -26,7 +26,7 @@ export function useSaveRunGroup() {
 export function useDeleteRunGroup() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, projectId }: { id: string; projectId: string }) => tauriApi.deleteRunGroup(id),
+    mutationFn: ({ id }: { id: string; projectId: string }) => tauriApi.deleteRunGroup(id),
     onSuccess: (_, { projectId }) => {
       queryClient.invalidateQueries({ queryKey: ['runGroups', projectId] });
     },

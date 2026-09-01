@@ -1,7 +1,8 @@
 import { getStatusColor } from '../lib/utils';
+import { ProcessStatus } from '../types';
 
 interface Props {
-  status: 'Running' | 'Stopped' | 'Failed' | 'Starting';
+  status: ProcessStatus;
 }
 
 export function ProcessStatusBadge({ status }: Props) {

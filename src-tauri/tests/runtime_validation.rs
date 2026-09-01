@@ -1,5 +1,6 @@
 use runyard_lib::models::*;
 use runyard_lib::process_manager::ProcessManager;
+use std::collections::HashMap;
 use std::time::Duration;
 use tokio::time::sleep;
 
@@ -46,6 +47,7 @@ async fn test_process_lifecycle_and_log_streaming() {
     let config = RunConfiguration {
         id: "config-test-1".to_string(),
         project_id: project_id.to_string(),
+        service_id: None,
         name: "Test Echo Service".to_string(),
         command: "sh".to_string(),
         args: vec![
@@ -54,7 +56,9 @@ async fn test_process_lifecycle_and_log_streaming() {
         ],
         working_dir: Some("/home/gimesha/My_Projects/TestProjects/node-api".to_string()),
         env_file: None,
+        env_vars: HashMap::new(),
         is_trusted: true,
+        is_default: false,
         source: RunConfigSource::UserCreated,
         created_at: chrono::Utc::now().to_rfc3339(),
     };

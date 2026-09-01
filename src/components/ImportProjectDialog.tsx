@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { tauriApi } from '../lib/tauri';
 import { ProjectInspection } from '../types';
-import { FolderPlus, AlertCircle, CheckCircle2, Layers, GitBranch, Play, Terminal, X } from 'lucide-react';
+import { FolderPlus, AlertCircle, Layers, GitBranch, Play, X } from 'lucide-react';
 
 interface ImportProjectDialogProps {
   isOpen: boolean;

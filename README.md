@@ -8,22 +8,25 @@ Runyard is a production-quality, local-first desktop application designed for de
 
 ## Key Features
 
-- **Project Discovery & Scanning**: Automatically scans configured local directory roots (e.g. `~/My_Projects`) for software projects across Node.js, Rust, Go, Python, Java (Maven/Gradle), .NET, Docker Compose, and Make. Skips dependencies (`node_modules`, `vendor`), build directories (`target`, `dist`, `build`), virtual environments (`.venv`), and internal tool directories.
-- **Explicit Project Import**: Manually import any folder on your machine as a project.
-- **Git State Inspection**: Real-time read-only Git status including current branch, upstream tracking, ahead/behind commit counts, dirty file counters (modified, staged, untracked), and recent commit log.
-- **IDE & Editor Integration**: Detects installed editors (VS Code, Cursor, Zed, Neovim, IntelliJ IDEA, Sublime Text, Antigravity) across standard `PATH`, Snap, and Flatpak installations. Offers one-click "Open in IDE", "Open Folder", and "Open Terminal".
-- **Runtime & Run-Command Suggestions**: Suggests executable development scripts without automatic execution.
+- **Project Discovery & Scanning**: Automatically scans configured local directory roots (e.g. `~/My_Projects`) for software projects across Node.js (npm/pnpm/yarn/bun), Rust, Go, Python (uv/Poetry/pip), Java (Maven/Gradle/Spring Boot), .NET, Docker Compose, and Make. Smart filters skip dependencies (`node_modules`, `vendor`), build targets (`target`, `dist`, `build`), virtual environments (`.venv`), and internal tool directories.
+- **Pre-Import Path Inspection**: Inspect discovered frameworks, languages, services, and run commands before importing into the catalog.
+- **Multi-Service & Monorepo Support**: Discovers nested service components (e.g., frontend, backend, workers) within a repository and provides isolated service profiles.
+- **Multi-Service Run Groups**: Define multi-service execution groups to launch, stop, and monitor complete development environments with a single click.
+- **Integrated PTY Terminal**: Native PTY-backed terminal emulator powered by `portable-pty` and `@xterm/xterm` with automatic resizing and ANSI streaming.
+- **Interactive Git Management**: Full Git workflow support including branch switching, branch creation, staged/modified/untracked change inspection, commit history, interactive file diffs, and safe fetch/pull actions.
+- **IDE Discovery & "Open With"**: Multi-source editor detection across standard `PATH`, `.desktop` entries, JetBrains Toolbox, Flatpak, and Snap. Configure global and per-project preferred IDEs with quick "Open in IDE" and "Open With..." options.
 - **Execution Safety & First-Run Trust**: Automatically detected commands require explicit user review and approval ("Run Once" or "Trust & Run") before execution. Never runs untrusted repository-controlled code automatically.
-- **Managed Process Lifecycle**: Start, stop, and restart project services with process group termination on Unix to avoid orphaned child processes.
-- **Real-Time Streamed Logs**: Bounded ring buffer log streaming for process stdout and stderr with timestamping and stream categorization.
-- **Command Palette (`Ctrl+K` / `Cmd+K`)**: Rapid global keyboard search across projects and actions.
-- **Local SQLite Persistence**: Persistent storage for projects, favorites, tags, scan roots, IDE preferences, and trusted run configurations.
+- **Structured Run Configurations**: Create, edit, duplicate, and customize run configurations with arguments arrays, custom working directories, and environment variable overrides.
+- **Managed Process Lifecycle & Live Logs**: Start, stop, and restart processes with full process group termination on Unix to avoid orphaned child processes. Includes live log filtering, auto-scroll toggles, stream colorization (stdout/stderr), and output buffer clearing.
+- **Command Palette (`Ctrl+K` / `Cmd+K`)**: Global keyboard navigation across projects, pages, and quick actions.
+- **Local SQLite Persistence**: Persistent storage with automatic schema migrations for projects, services, run groups, favorites, tags, scan roots, IDE preferences, and trusted run configurations.
 
 ---
 
 ## Technology Stack
 
 - **Desktop Framework**: Tauri 2 (Rust)
+- **Terminal Subsystem**: `portable-pty` (Rust) + `@xterm/xterm` (React)
 - **Frontend UI**: React 19 + TypeScript
 - **Styling**: Tailwind CSS v4 (Zinc dark theme with Emerald accent)
 - **Icons**: Lucide React
@@ -49,7 +52,7 @@ Runyard is a production-quality, local-first desktop application designed for de
 - **Rust**: 1.80+ (stable toolchain)
 - **System Libraries (Linux / Ubuntu)**:
   ```bash
-  sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev librsvg2-dev build-essential
+  sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev librsvg2-dev build-essential libayatana-appindicator3-dev
   ```
 
 ### Install Dependencies
@@ -70,7 +73,7 @@ npm run tauri dev
 # Frontend typecheck & build
 npm run build
 
-# Rust backend tests
+# Rust backend unit and integration tests
 cd src-tauri && cargo test
 ```
 
@@ -79,3 +82,4 @@ cd src-tauri && cargo test
 ```bash
 npm run tauri build
 ```
+Release bundles will be produced in `src-tauri/target/release/bundle/` (.deb, .rpm, .AppImage) and `src-tauri/target/release/runyard`.
