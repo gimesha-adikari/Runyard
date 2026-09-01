@@ -23,7 +23,10 @@ pub fn run() {
     let process_manager = Arc::new(Mutex::new(ProcessManager::new()));
     let pty_manager = Arc::new(PtyManager::new());
 
-    tauri::Builder::default()
+    let pm_clone = process_manager.clone();
+    let pty_clone = pty_manager.clone();
+
+    let app = tauri::Builder::default()
         .manage(process_manager)
         .manage(pty_manager)
         .plugin(tauri_plugin_shell::init())
@@ -67,6 +70,7 @@ pub fn run() {
             commands::start_run_group,
             commands::stop_run_group,
             commands::start_process,
+            commands::run_untrusted_once,
             commands::stop_process,
             commands::restart_process,
             commands::get_processes,
@@ -79,6 +83,25 @@ pub fn run() {
             commands::get_settings,
             commands::update_setting,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
+
+    app.run(move |_app_handle, event| {
+        if let tauri::RunEvent::ExitRequested { .. } = event {
+            let pm = pm_clone.clone();
+            let pty = pty_clone.clone();
+            pty.shutdown_all();
+            if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                handle.block_on(async {
+                    let pm_lock = pm.lock().await;
+                    pm_lock.shutdown_all().await;
+                });
+            } else if let Ok(rt) = tokio::runtime::Runtime::new() {
+                rt.block_on(async {
+                    let pm_lock = pm.lock().await;
+                    pm_lock.shutdown_all().await;
+                });
+            }
+        }
+    });
 }

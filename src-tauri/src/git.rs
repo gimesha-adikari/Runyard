@@ -8,10 +8,16 @@ pub fn get_git_status(project_path: &str) -> Result<GitStatus> {
         .current_dir(project_path)
         .output()
         .map_err(|e| RunyardError::Git(e.to_string()))?;
-    
+
     let branch = if branch_output.status.success() {
-        let b = String::from_utf8_lossy(&branch_output.stdout).trim().to_string();
-        if b.is_empty() { None } else { Some(b) }
+        let b = String::from_utf8_lossy(&branch_output.stdout)
+            .trim()
+            .to_string();
+        if b.is_empty() {
+            None
+        } else {
+            Some(b)
+        }
     } else {
         None
     };
@@ -21,9 +27,13 @@ pub fn get_git_status(project_path: &str) -> Result<GitStatus> {
         .current_dir(project_path)
         .output()
         .map_err(|e| RunyardError::Git(e.to_string()))?;
-    
+
     let remote_url = if remote_output.status.success() {
-        Some(String::from_utf8_lossy(&remote_output.stdout).trim().to_string())
+        Some(
+            String::from_utf8_lossy(&remote_output.stdout)
+                .trim()
+                .to_string(),
+        )
     } else {
         None
     };
@@ -33,7 +43,7 @@ pub fn get_git_status(project_path: &str) -> Result<GitStatus> {
         .current_dir(project_path)
         .output()
         .map_err(|e| RunyardError::Git(e.to_string()))?;
-    
+
     let mut modified_files = Vec::new();
     let mut untracked_files = Vec::new();
     let mut staged_files = Vec::new();
@@ -49,8 +59,10 @@ pub fn get_git_status(project_path: &str) -> Result<GitStatus> {
                 } else if status.starts_with(' ') || status.starts_with('M') {
                     modified_files.push(file.clone());
                 }
-                
-                if status.chars().next().unwrap_or(' ') != ' ' && status.chars().next().unwrap_or(' ') != '?' {
+
+                if status.chars().next().unwrap_or(' ') != ' '
+                    && status.chars().next().unwrap_or(' ') != '?'
+                {
                     staged_files.push(file);
                 }
             }
@@ -59,12 +71,12 @@ pub fn get_git_status(project_path: &str) -> Result<GitStatus> {
 
     let mut ahead = 0;
     let mut behind = 0;
-    
+
     let rev_output = Command::new("git")
         .args(["rev-list", "--count", "--left-right", "HEAD...@{upstream}"])
         .current_dir(project_path)
         .output();
-    
+
     if let Ok(out) = rev_output {
         if out.status.success() {
             let stdout = String::from_utf8_lossy(&out.stdout);
@@ -77,10 +89,15 @@ pub fn get_git_status(project_path: &str) -> Result<GitStatus> {
     }
 
     let log_output = Command::new("git")
-        .args(["log", "--oneline", "-15", "--format=%H|||%h|||%s|||%an|||%ai"])
+        .args([
+            "log",
+            "--oneline",
+            "-15",
+            "--format=%H|||%h|||%s|||%an|||%ai",
+        ])
         .current_dir(project_path)
         .output();
-    
+
     let mut recent_commits = Vec::new();
     if let Ok(out) = log_output {
         if out.status.success() {
@@ -103,7 +120,9 @@ pub fn get_git_status(project_path: &str) -> Result<GitStatus> {
     Ok(GitStatus {
         branch,
         remote_url,
-        is_clean: modified_files.is_empty() && untracked_files.is_empty() && staged_files.is_empty(),
+        is_clean: modified_files.is_empty()
+            && untracked_files.is_empty()
+            && staged_files.is_empty(),
         modified_files,
         untracked_files,
         staged_files,
@@ -197,31 +216,82 @@ pub fn git_pull(project_path: &str) -> Result<String> {
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
+fn validate_branch_name(branch_name: &str) -> Result<()> {
+    let name = branch_name.trim();
+    if name.is_empty() {
+        return Err(RunyardError::Validation(
+            "Branch name cannot be empty".to_string(),
+        ));
+    }
+    if name.starts_with('-') {
+        return Err(RunyardError::Validation(
+            "Branch name cannot start with '-'".to_string(),
+        ));
+    }
+    if name.contains('\0')
+        || name.contains(' ')
+        || name.contains("..")
+        || name.contains('~')
+        || name.contains('^')
+        || name.contains(':')
+    {
+        return Err(RunyardError::Validation(format!(
+            "Branch name '{}' contains invalid characters",
+            branch_name
+        )));
+    }
+    Ok(())
+}
+
 pub fn git_checkout_branch(project_path: &str, branch_name: &str) -> Result<()> {
+    validate_branch_name(branch_name)?;
+
     let output = Command::new("git")
         .args(["checkout", branch_name])
         .current_dir(project_path)
         .output()
-        .map_err(|e| RunyardError::Git(e.to_string()))?;
+        .map_err(|e| {
+            RunyardError::Git(format!(
+                "Failed to execute git checkout in '{}': {}",
+                project_path, e
+            ))
+        })?;
 
     if !output.status.success() {
         let err = String::from_utf8_lossy(&output.stderr);
-        return Err(RunyardError::Git(format!("Checkout failed: {}", err)));
+        return Err(RunyardError::Git(format!(
+            "Checkout of '{}' failed in '{}': {}",
+            branch_name,
+            project_path,
+            err.trim()
+        )));
     }
 
     Ok(())
 }
 
 pub fn git_create_branch(project_path: &str, branch_name: &str) -> Result<()> {
+    validate_branch_name(branch_name)?;
+
     let output = Command::new("git")
         .args(["checkout", "-b", branch_name])
         .current_dir(project_path)
         .output()
-        .map_err(|e| RunyardError::Git(e.to_string()))?;
+        .map_err(|e| {
+            RunyardError::Git(format!(
+                "Failed to execute git branch creation in '{}': {}",
+                project_path, e
+            ))
+        })?;
 
     if !output.status.success() {
         let err = String::from_utf8_lossy(&output.stderr);
-        return Err(RunyardError::Git(format!("Create branch failed: {}", err)));
+        return Err(RunyardError::Git(format!(
+            "Create branch '{}' failed in '{}': {}",
+            branch_name,
+            project_path,
+            err.trim()
+        )));
     }
 
     Ok(())

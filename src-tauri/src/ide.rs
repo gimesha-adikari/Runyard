@@ -41,19 +41,49 @@ pub fn detect_ides() -> Vec<DetectedIde> {
 
     // Check Flatpak apps
     let flatpak_apps = [
-        ("com.visualstudio.code", "VS Code (Flatpak)", "flatpak run com.visualstudio.code"),
-        ("com.vscodium.codium", "VSCodium (Flatpak)", "flatpak run com.vscodium.codium"),
-        ("com.jetbrains.IntelliJ-IDEA-Community", "IntelliJ IDEA (Flatpak)", "flatpak run com.jetbrains.IntelliJ-IDEA-Community"),
-        ("com.jetbrains.IntelliJ-IDEA-Ultimate", "IntelliJ IDEA (Flatpak)", "flatpak run com.jetbrains.IntelliJ-IDEA-Ultimate"),
-        ("com.jetbrains.PyCharm-Community", "PyCharm (Flatpak)", "flatpak run com.jetbrains.PyCharm-Community"),
+        (
+            "com.visualstudio.code",
+            "VS Code (Flatpak)",
+            "flatpak run com.visualstudio.code",
+        ),
+        (
+            "com.vscodium.codium",
+            "VSCodium (Flatpak)",
+            "flatpak run com.vscodium.codium",
+        ),
+        (
+            "com.jetbrains.IntelliJ-IDEA-Community",
+            "IntelliJ IDEA (Flatpak)",
+            "flatpak run com.jetbrains.IntelliJ-IDEA-Community",
+        ),
+        (
+            "com.jetbrains.IntelliJ-IDEA-Ultimate",
+            "IntelliJ IDEA (Flatpak)",
+            "flatpak run com.jetbrains.IntelliJ-IDEA-Ultimate",
+        ),
+        (
+            "com.jetbrains.PyCharm-Community",
+            "PyCharm (Flatpak)",
+            "flatpak run com.jetbrains.PyCharm-Community",
+        ),
         ("dev.zed.Zed", "Zed (Flatpak)", "flatpak run dev.zed.Zed"),
     ];
 
     for (app_id, name, exec) in flatpak_apps {
         if !seen_ids.contains(&app_id.to_string()) {
-            let desktop_path = format!("/var/lib/flatpak/exports/share/applications/{}.desktop", app_id);
-            let user_desktop = dirs::home_dir().map(|h| h.join(format!(".local/share/flatpak/exports/share/applications/{}.desktop", app_id)));
-            if Path::new(&desktop_path).exists() || user_desktop.map(|p| p.exists()).unwrap_or(false) {
+            let desktop_path = format!(
+                "/var/lib/flatpak/exports/share/applications/{}.desktop",
+                app_id
+            );
+            let user_desktop = dirs::home_dir().map(|h| {
+                h.join(format!(
+                    ".local/share/flatpak/exports/share/applications/{}.desktop",
+                    app_id
+                ))
+            });
+            if Path::new(&desktop_path).exists()
+                || user_desktop.map(|p| p.exists()).unwrap_or(false)
+            {
                 seen_ids.insert(app_id.to_string());
                 ides.push(DetectedIde {
                     id: app_id.to_string(),
@@ -101,7 +131,9 @@ pub fn detect_ides() -> Vec<DetectedIde> {
     // Check desktop applications directories
     let desktop_dirs = [
         PathBuf::from("/usr/share/applications"),
-        dirs::home_dir().map(|h| h.join(".local/share/applications")).unwrap_or_default(),
+        dirs::home_dir()
+            .map(|h| h.join(".local/share/applications"))
+            .unwrap_or_default(),
     ];
 
     for dir in desktop_dirs {
@@ -145,6 +177,14 @@ fn is_command_available(cmd: &str) -> bool {
 }
 
 pub fn open_in_ide(ide_command: &str, project_path: &str) -> Result<()> {
+    let p = Path::new(project_path);
+    if !p.exists() {
+        return Err(RunyardError::Validation(format!(
+            "Project path '{}' does not exist",
+            project_path
+        )));
+    }
+
     if ide_command.starts_with("flatpak run ") {
         let parts: Vec<&str> = ide_command.split_whitespace().collect();
         let mut cmd = Command::new(parts[0]);
@@ -158,12 +198,22 @@ pub fn open_in_ide(ide_command: &str, project_path: &str) -> Result<()> {
         Command::new(ide_command)
             .arg(project_path)
             .spawn()
-            .map_err(|e| RunyardError::Process(format!("Failed to open IDE '{}': {}", ide_command, e)))?;
+            .map_err(|e| {
+                RunyardError::Process(format!("Failed to open IDE '{}': {}", ide_command, e))
+            })?;
     }
     Ok(())
 }
 
 pub fn open_folder(path: &str) -> Result<()> {
+    let p = Path::new(path);
+    if !p.exists() {
+        return Err(RunyardError::Validation(format!(
+            "Path '{}' does not exist",
+            path
+        )));
+    }
+
     Command::new("xdg-open")
         .arg(path)
         .spawn()
@@ -172,7 +222,22 @@ pub fn open_folder(path: &str) -> Result<()> {
 }
 
 pub fn open_terminal(path: &str) -> Result<()> {
-    let terminals = ["gnome-terminal", "konsole", "xfce4-terminal", "alacritty", "kitty", "xterm"];
+    let p = Path::new(path);
+    if !p.exists() {
+        return Err(RunyardError::Validation(format!(
+            "Path '{}' does not exist",
+            path
+        )));
+    }
+
+    let terminals = [
+        "gnome-terminal",
+        "konsole",
+        "xfce4-terminal",
+        "alacritty",
+        "kitty",
+        "xterm",
+    ];
     for term in terminals {
         if is_command_available(term) {
             let mut cmd = Command::new(term);
@@ -181,9 +246,12 @@ pub fn open_terminal(path: &str) -> Result<()> {
             } else {
                 cmd.current_dir(path);
             }
-            cmd.spawn().map_err(|e| RunyardError::Process(e.to_string()))?;
+            cmd.spawn()
+                .map_err(|e| RunyardError::Process(e.to_string()))?;
             return Ok(());
         }
     }
-    Err(RunyardError::NotFound("No terminal emulator found".to_string()))
+    Err(RunyardError::NotFound(
+        "No terminal emulator found".to_string(),
+    ))
 }

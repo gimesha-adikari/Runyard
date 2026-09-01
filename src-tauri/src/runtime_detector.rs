@@ -21,7 +21,9 @@ pub fn detect_run_configs(project_path: &str) -> Vec<DetectedRunConfig> {
             if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
                 if let Some(scripts) = json.get("scripts").and_then(|s| s.as_object()) {
                     for (name, _) in scripts {
-                        if ["dev", "start", "serve", "watch", "build", "test"].contains(&name.as_str()) {
+                        if ["dev", "start", "serve", "watch", "build", "test"]
+                            .contains(&name.as_str())
+                        {
                             let (command, args) = if pkg_mgr == "yarn" {
                                 ("yarn".to_string(), vec![name.clone()])
                             } else {
@@ -121,9 +123,19 @@ pub fn detect_run_configs(project_path: &str) -> Vec<DetectedRunConfig> {
 
         if p.join("main.py").exists() {
             let (cmd, args) = if runner == "uv" {
-                ("uv".to_string(), vec!["run".to_string(), "main.py".to_string()])
+                (
+                    "uv".to_string(),
+                    vec!["run".to_string(), "main.py".to_string()],
+                )
             } else if runner == "poetry" {
-                ("poetry".to_string(), vec!["run".to_string(), "python".to_string(), "main.py".to_string()])
+                (
+                    "poetry".to_string(),
+                    vec![
+                        "run".to_string(),
+                        "python".to_string(),
+                        "main.py".to_string(),
+                    ],
+                )
             } else {
                 ("python".to_string(), vec!["main.py".to_string()])
             };
@@ -138,9 +150,19 @@ pub fn detect_run_configs(project_path: &str) -> Vec<DetectedRunConfig> {
             });
         } else if p.join("app.py").exists() {
             let (cmd, args) = if runner == "uv" {
-                ("uv".to_string(), vec!["run".to_string(), "app.py".to_string()])
+                (
+                    "uv".to_string(),
+                    vec!["run".to_string(), "app.py".to_string()],
+                )
             } else if runner == "poetry" {
-                ("poetry".to_string(), vec!["run".to_string(), "python".to_string(), "app.py".to_string()])
+                (
+                    "poetry".to_string(),
+                    vec![
+                        "run".to_string(),
+                        "python".to_string(),
+                        "app.py".to_string(),
+                    ],
+                )
             } else {
                 ("python".to_string(), vec!["app.py".to_string()])
             };
@@ -158,7 +180,11 @@ pub fn detect_run_configs(project_path: &str) -> Vec<DetectedRunConfig> {
 
     // Java
     if p.join("pom.xml").exists() {
-        let mvn_cmd = if p.join("mvnw").exists() { "./mvnw" } else { "mvn" };
+        let mvn_cmd = if p.join("mvnw").exists() {
+            "./mvnw"
+        } else {
+            "mvn"
+        };
         configs.push(DetectedRunConfig {
             service_id: None,
             service_name: None,
@@ -169,7 +195,11 @@ pub fn detect_run_configs(project_path: &str) -> Vec<DetectedRunConfig> {
             source_file: "pom.xml".to_string(),
         });
     } else if p.join("build.gradle").exists() || p.join("build.gradle.kts").exists() {
-        let gradle_cmd = if p.join("gradlew").exists() { "./gradlew" } else { "gradle" };
+        let gradle_cmd = if p.join("gradlew").exists() {
+            "./gradlew"
+        } else {
+            "gradle"
+        };
         configs.push(DetectedRunConfig {
             service_id: None,
             service_name: None,
@@ -182,7 +212,20 @@ pub fn detect_run_configs(project_path: &str) -> Vec<DetectedRunConfig> {
     }
 
     // .NET
-    if p.join("*.sln").exists() || p.join("*.csproj").exists() {
+    let mut has_dotnet = false;
+    let mut dotnet_file = ".csproj".to_string();
+    if let Ok(entries) = std::fs::read_dir(p) {
+        for e in entries.flatten() {
+            if let Some(ext) = e.path().extension().and_then(|s| s.to_str()) {
+                if ext == "sln" || ext == "csproj" || ext == "fsproj" {
+                    has_dotnet = true;
+                    dotnet_file = e.file_name().to_string_lossy().to_string();
+                    break;
+                }
+            }
+        }
+    }
+    if has_dotnet {
         configs.push(DetectedRunConfig {
             service_id: None,
             service_name: None,
@@ -190,12 +233,16 @@ pub fn detect_run_configs(project_path: &str) -> Vec<DetectedRunConfig> {
             command: "dotnet".to_string(),
             args: vec!["run".to_string()],
             working_dir: Some(project_path.to_string()),
-            source_file: ".csproj".to_string(),
+            source_file: dotnet_file,
         });
     }
 
     // Docker Compose
-    if p.join("docker-compose.yml").exists() || p.join("docker-compose.yaml").exists() || p.join("compose.yml").exists() || p.join("compose.yaml").exists() {
+    if p.join("docker-compose.yml").exists()
+        || p.join("docker-compose.yaml").exists()
+        || p.join("compose.yml").exists()
+        || p.join("compose.yaml").exists()
+    {
         configs.push(DetectedRunConfig {
             service_id: None,
             service_name: None,
@@ -211,7 +258,10 @@ pub fn detect_run_configs(project_path: &str) -> Vec<DetectedRunConfig> {
     if p.join("Makefile").exists() {
         if let Ok(content) = std::fs::read_to_string(p.join("Makefile")) {
             for target in ["dev", "run", "start", "test", "build"] {
-                if content.lines().any(|l| l.starts_with(&format!("{}:", target))) {
+                if content
+                    .lines()
+                    .any(|l| l.starts_with(&format!("{}:", target)))
+                {
                     configs.push(DetectedRunConfig {
                         service_id: None,
                         service_name: None,

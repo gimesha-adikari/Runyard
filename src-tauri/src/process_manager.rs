@@ -1,10 +1,17 @@
 use crate::error::{Result, RunyardError};
 use crate::models::{ProcessInfo, ProcessStatus, RunConfiguration};
 use std::collections::{HashMap, VecDeque};
+use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, Notify};
+use tokio::time::{timeout, Duration};
+
+const MAX_LOG_LINES: usize = 10000;
+const STOP_GRACE_PERIOD: Duration = Duration::from_millis(2500);
+const KILL_WAIT_TIMEOUT: Duration = Duration::from_millis(1500);
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct OutputLine {
@@ -14,8 +21,9 @@ pub struct OutputLine {
 }
 
 pub struct ManagedProcess {
-    pub child: Option<tokio::process::Child>,
     pub info: ProcessInfo,
+    exit_notify: Arc<Notify>,
+    stop_requested: Arc<AtomicBool>,
 }
 
 pub struct ProcessManager {
@@ -31,37 +39,60 @@ impl ProcessManager {
         }
     }
 
-    pub async fn start_process(&self, project_id: &str, run_config: RunConfiguration) -> Result<String> {
+    pub async fn start_process(
+        &self,
+        project_id: &str,
+        run_config: RunConfiguration,
+    ) -> Result<String> {
         let process_id = uuid::Uuid::new_v4().to_string();
-        
-        let mut cmd = Command::new(&run_config.command);
-        cmd.args(&run_config.args);
-        
-        if let Some(wd) = &run_config.working_dir {
-            cmd.current_dir(wd);
+
+        let working_dir = if let Some(ref wd) = run_config.working_dir {
+            Path::new(wd).to_path_buf()
         } else if let Ok(project) = crate::db::get_project(project_id) {
-            cmd.current_dir(project.path);
+            Path::new(&project.path).to_path_buf()
+        } else {
+            std::env::current_dir().unwrap_or_default()
+        };
+
+        if !working_dir.exists() || !working_dir.is_dir() {
+            return Err(RunyardError::Validation(format!(
+                "Working directory '{}' does not exist or is not a directory",
+                working_dir.display()
+            )));
         }
 
-        // Apply custom environment variables
+        let mut cmd = Command::new(&run_config.command);
+        cmd.args(&run_config.args);
+        cmd.current_dir(&working_dir);
+
         for (k, v) in &run_config.env_vars {
             cmd.env(k, v);
         }
-        
+
         cmd.stdout(std::process::Stdio::piped());
         cmd.stderr(std::process::Stdio::piped());
-        
+
         #[cfg(unix)]
         {
             cmd.process_group(0);
         }
 
-        let mut child = cmd.spawn().map_err(|e| RunyardError::Process(format!("Failed to start process '{}': {}", run_config.command, e)))?;
+        let mut child = cmd.spawn().map_err(|e| {
+            RunyardError::Process(format!(
+                "Failed to start process '{}' in '{}': {}",
+                run_config.command,
+                working_dir.display(),
+                e
+            ))
+        })?;
+
         let pid = child.id();
-        
-        let stdout = child.stdout.take().expect("Failed to open stdout");
-        let stderr = child.stderr.take().expect("Failed to open stderr");
-        
+        let stdout = child.stdout.take();
+        let stderr = child.stderr.take();
+
+        let exit_notify = Arc::new(Notify::new());
+        let stop_requested = Arc::new(AtomicBool::new(false));
+
         let info = ProcessInfo {
             id: process_id.clone(),
             project_id: project_id.to_string(),
@@ -76,98 +107,171 @@ impl ProcessManager {
 
         {
             let mut procs = self.processes.lock().await;
-            procs.insert(process_id.clone(), ManagedProcess {
-                child: Some(child),
-                info,
-            });
+            procs.insert(
+                process_id.clone(),
+                ManagedProcess {
+                    info,
+                    exit_notify: exit_notify.clone(),
+                    stop_requested: stop_requested.clone(),
+                },
+            );
             let mut buffers = self.output_buffers.lock().await;
-            buffers.insert(process_id.clone(), VecDeque::with_capacity(10000));
+            buffers.insert(process_id.clone(), VecDeque::with_capacity(MAX_LOG_LINES));
         }
 
-        let buffers_clone = self.output_buffers.clone();
-        let pid_clone = process_id.clone();
-        tokio::spawn(async move {
-            let mut reader = BufReader::new(stdout).lines();
-            while let Ok(Some(line)) = reader.next_line().await {
-                let mut buffers = buffers_clone.lock().await;
-                if let Some(buf) = buffers.get_mut(&pid_clone) {
-                    if buf.len() >= 10000 { buf.pop_front(); }
-                    buf.push_back(OutputLine {
-                        timestamp: chrono::Utc::now().to_rfc3339(),
-                        stream: "stdout".to_string(),
-                        content: line,
-                    });
+        if let Some(out) = stdout {
+            let buffers_clone = self.output_buffers.clone();
+            let pid_clone = process_id.clone();
+            tokio::spawn(async move {
+                let mut reader = BufReader::new(out).lines();
+                while let Ok(Some(line)) = reader.next_line().await {
+                    let mut buffers = buffers_clone.lock().await;
+                    if let Some(buf) = buffers.get_mut(&pid_clone) {
+                        if buf.len() >= MAX_LOG_LINES {
+                            buf.pop_front();
+                        }
+                        buf.push_back(OutputLine {
+                            timestamp: chrono::Utc::now().to_rfc3339(),
+                            stream: "stdout".to_string(),
+                            content: line,
+                        });
+                    }
                 }
-            }
-        });
+            });
+        }
 
-        let buffers_clone_err = self.output_buffers.clone();
-        let pid_clone_err = process_id.clone();
-        tokio::spawn(async move {
-            let mut reader = BufReader::new(stderr).lines();
-            while let Ok(Some(line)) = reader.next_line().await {
-                let mut buffers = buffers_clone_err.lock().await;
-                if let Some(buf) = buffers.get_mut(&pid_clone_err) {
-                    if buf.len() >= 10000 { buf.pop_front(); }
-                    buf.push_back(OutputLine {
-                        timestamp: chrono::Utc::now().to_rfc3339(),
-                        stream: "stderr".to_string(),
-                        content: line,
-                    });
+        if let Some(err) = stderr {
+            let buffers_clone_err = self.output_buffers.clone();
+            let pid_clone_err = process_id.clone();
+            tokio::spawn(async move {
+                let mut reader = BufReader::new(err).lines();
+                while let Ok(Some(line)) = reader.next_line().await {
+                    let mut buffers = buffers_clone_err.lock().await;
+                    if let Some(buf) = buffers.get_mut(&pid_clone_err) {
+                        if buf.len() >= MAX_LOG_LINES {
+                            buf.pop_front();
+                        }
+                        buf.push_back(OutputLine {
+                            timestamp: chrono::Utc::now().to_rfc3339(),
+                            stream: "stderr".to_string(),
+                            content: line,
+                        });
+                    }
                 }
-            }
-        });
+            });
+        }
 
         let procs_clone = self.processes.clone();
         let pid_clone_wait = process_id.clone();
         tokio::spawn(async move {
-            let mut procs = procs_clone.lock().await;
-            if let Some(mp) = procs.get_mut(&pid_clone_wait) {
-                if let Some(mut child) = mp.child.take() {
-                    drop(procs);
-                    let status = child.wait().await;
-                    let (proc_status, exit_code) = match status {
-                        Ok(s) => (
-                            if s.success() { ProcessStatus::Stopped } else { ProcessStatus::Failed },
-                            s.code(),
-                        ),
-                        Err(_) => (ProcessStatus::Failed, None),
-                    };
-                    let mut procs = procs_clone.lock().await;
-                    if let Some(mp) = procs.get_mut(&pid_clone_wait) {
-                        if mp.info.status == ProcessStatus::Stopping || mp.info.status == ProcessStatus::Stopped {
-                            mp.info.status = ProcessStatus::Stopped;
-                        } else {
-                            mp.info.status = proc_status;
-                        }
-                        mp.info.exit_code = exit_code;
+            let status_res = child.wait().await;
+            let is_stop = stop_requested.load(Ordering::SeqCst);
+            let (final_status, exit_code) = match status_res {
+                Ok(status) => {
+                    let code = status.code();
+                    if is_stop {
+                        (ProcessStatus::Stopped, code)
+                    } else {
+                        (ProcessStatus::Exited, code)
                     }
                 }
+                Err(_) => (ProcessStatus::Failed, None),
+            };
+
+            let mut procs = procs_clone.lock().await;
+            if let Some(mp) = procs.get_mut(&pid_clone_wait) {
+                mp.info.status = final_status;
+                mp.info.exit_code = exit_code;
             }
+            drop(procs);
+            exit_notify.notify_waiters();
         });
 
         Ok(process_id)
     }
 
     pub async fn stop_process(&self, process_id: &str) -> Result<()> {
-        let mut procs = self.processes.lock().await;
-        if let Some(mp) = procs.get_mut(process_id) {
-            mp.info.status = ProcessStatus::Stopping;
-            if let Some(pid) = mp.info.pid {
-                #[cfg(unix)]
-                {
-                    unsafe { libc::kill(-(pid as i32), libc::SIGTERM); }
+        let (pid_opt, exit_notify, _stop_requested) = {
+            let mut procs = self.processes.lock().await;
+            let mp = match procs.get_mut(process_id) {
+                Some(m) => m,
+                None => {
+                    return Err(RunyardError::NotFound(format!(
+                        "Process {} not found",
+                        process_id
+                    )))
                 }
-                #[cfg(not(unix))]
-                {
-                    if let Some(child) = &mut mp.child {
-                        let _ = child.start_kill();
+            };
+
+            if mp.info.status == ProcessStatus::Stopped
+                || mp.info.status == ProcessStatus::Exited
+                || mp.info.status == ProcessStatus::Failed
+            {
+                return Ok(());
+            }
+
+            mp.info.status = ProcessStatus::Stopping;
+            mp.stop_requested.store(true, Ordering::SeqCst);
+            (
+                mp.info.pid,
+                mp.exit_notify.clone(),
+                mp.stop_requested.clone(),
+            )
+        };
+
+        if let Some(pid) = pid_opt {
+            #[cfg(unix)]
+            {
+                if pid > 1 {
+                    unsafe {
+                        libc::kill(-(pid as i32), libc::SIGTERM);
                     }
                 }
             }
+            #[cfg(not(unix))]
+            {
+                stop_requested.store(true, Ordering::SeqCst);
+            }
+
+            let graceful = timeout(STOP_GRACE_PERIOD, exit_notify.notified()).await;
+            if graceful.is_err() {
+                #[cfg(unix)]
+                {
+                    if pid > 1 {
+                        unsafe {
+                            libc::kill(-(pid as i32), libc::SIGKILL);
+                        }
+                    }
+                }
+                let _ = timeout(KILL_WAIT_TIMEOUT, exit_notify.notified()).await;
+            }
+        }
+
+        let mut procs = self.processes.lock().await;
+        if let Some(mp) = procs.get_mut(process_id) {
             mp.info.status = ProcessStatus::Stopped;
         }
+
         Ok(())
+    }
+
+    pub async fn shutdown_all(&self) {
+        let active_ids: Vec<String> = {
+            let procs = self.processes.lock().await;
+            procs
+                .iter()
+                .filter(|(_, mp)| {
+                    mp.info.status == ProcessStatus::Running
+                        || mp.info.status == ProcessStatus::Starting
+                        || mp.info.status == ProcessStatus::Stopping
+                })
+                .map(|(id, _)| id.clone())
+                .collect()
+        };
+
+        for id in active_ids {
+            let _ = self.stop_process(&id).await;
+        }
     }
 
     pub async fn get_all_processes(&self) -> Vec<ProcessInfo> {

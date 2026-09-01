@@ -15,7 +15,8 @@ fn test_project_type_detection() {
     fs::write(
         node_dir.join("package.json"),
         r#"{"name": "test-node", "dependencies": {"react": "^18.0.0", "next": "13.0.0"}}"#,
-    ).unwrap();
+    )
+    .unwrap();
     fs::write(node_dir.join("tsconfig.json"), "{}").unwrap();
 
     let result = runyard_lib::detector::detect_project_type(node_dir.to_str().unwrap());
@@ -27,7 +28,11 @@ fn test_project_type_detection() {
     // Rust project
     let rust_dir = root.join("rust-app");
     fs::create_dir_all(&rust_dir).unwrap();
-    fs::write(rust_dir.join("Cargo.toml"), "[package]\nname = \"test-rust\"").unwrap();
+    fs::write(
+        rust_dir.join("Cargo.toml"),
+        "[package]\nname = \"test-rust\"",
+    )
+    .unwrap();
 
     let result = runyard_lib::detector::detect_project_type(rust_dir.to_str().unwrap());
     assert_eq!(result.project_type, Some("rust".to_string()));
@@ -53,9 +58,21 @@ fn test_monorepo_service_detection() {
     fs::create_dir_all(mono_dir.join("backend")).unwrap();
     fs::create_dir_all(mono_dir.join("worker")).unwrap();
 
-    fs::write(mono_dir.join("frontend").join("package.json"), r#"{"name": "frontend", "scripts": {"dev": "vite"}}"#).unwrap();
-    fs::write(mono_dir.join("backend").join("Cargo.toml"), "[package]\nname = \"backend\"").unwrap();
-    fs::write(mono_dir.join("worker").join("pyproject.toml"), "[project]\nname = \"worker\"").unwrap();
+    fs::write(
+        mono_dir.join("frontend").join("package.json"),
+        r#"{"name": "frontend", "scripts": {"dev": "vite"}}"#,
+    )
+    .unwrap();
+    fs::write(
+        mono_dir.join("backend").join("Cargo.toml"),
+        "[package]\nname = \"backend\"",
+    )
+    .unwrap();
+    fs::write(
+        mono_dir.join("worker").join("pyproject.toml"),
+        "[project]\nname = \"worker\"",
+    )
+    .unwrap();
 
     let services = runyard_lib::scanner::detect_services_in_project(mono_dir.to_str().unwrap());
     assert_eq!(services.len(), 3);
@@ -100,7 +117,8 @@ fn test_runtime_run_config_detection() {
     fs::write(
         node_dir.join("package.json"),
         r#"{"scripts": {"dev": "vite", "start": "node index.js", "build": "vite build"}}"#,
-    ).unwrap();
+    )
+    .unwrap();
 
     let configs = runyard_lib::runtime_detector::detect_run_configs(node_dir.to_str().unwrap());
     let names: Vec<String> = configs.into_iter().map(|c| c.name).collect();
@@ -114,18 +132,40 @@ fn test_git_branches_and_diffs() {
     let dir = tempdir().unwrap();
     let root = dir.path();
 
-    Command::new("git").args(["init"]).current_dir(root).status().unwrap();
-    Command::new("git").args(["config", "user.name", "Test"]).current_dir(root).status().unwrap();
-    Command::new("git").args(["config", "user.email", "test@test.com"]).current_dir(root).status().unwrap();
+    Command::new("git")
+        .args(["init"])
+        .current_dir(root)
+        .status()
+        .unwrap();
+    Command::new("git")
+        .args(["config", "user.name", "Test"])
+        .current_dir(root)
+        .status()
+        .unwrap();
+    Command::new("git")
+        .args(["config", "user.email", "test@test.com"])
+        .current_dir(root)
+        .status()
+        .unwrap();
 
     fs::write(root.join("test.txt"), "hello\n").unwrap();
-    Command::new("git").args(["add", "test.txt"]).current_dir(root).status().unwrap();
-    Command::new("git").args(["commit", "-m", "init"]).current_dir(root).status().unwrap();
+    Command::new("git")
+        .args(["add", "test.txt"])
+        .current_dir(root)
+        .status()
+        .unwrap();
+    Command::new("git")
+        .args(["commit", "-m", "init"])
+        .current_dir(root)
+        .status()
+        .unwrap();
 
     // Create a new branch
     runyard_lib::git::git_create_branch(root.to_str().unwrap(), "feature-1").unwrap();
     let branches = runyard_lib::git::get_git_branches(root.to_str().unwrap()).unwrap();
-    assert!(branches.iter().any(|b| b.name == "feature-1" && b.is_current));
+    assert!(branches
+        .iter()
+        .any(|b| b.name == "feature-1" && b.is_current));
 
     // Modify file and test diff
     fs::write(root.join("test.txt"), "hello world\n").unwrap();
@@ -186,7 +226,7 @@ fn test_database_operations_and_migrations() {
     env_vars.insert("PORT".to_string(), "8080".to_string());
 
     let config_id = uuid::Uuid::new_v4().to_string();
-    let config = RunConfiguration {
+    let mut config = RunConfiguration {
         id: config_id.clone(),
         project_id: project_id.clone(),
         service_id: Some(service_id.clone()),
@@ -197,10 +237,12 @@ fn test_database_operations_and_migrations() {
         env_file: None,
         env_vars,
         is_trusted: true,
+        trusted_fingerprint: None,
         is_default: true,
         source: RunConfigSource::UserCreated,
         created_at: chrono::Utc::now().to_rfc3339(),
     };
+    config.trusted_fingerprint = Some(config.compute_fingerprint());
 
     runyard_lib::db::save_run_config(&config).unwrap();
     let configs = runyard_lib::db::get_run_configs(&project_id).unwrap();
@@ -243,7 +285,10 @@ fn test_database_operations_and_migrations() {
         created_at: chrono::Utc::now().to_rfc3339(),
     };
     runyard_lib::db::upsert_project(&updated_project).unwrap();
-    let after_rescan = runyard_lib::db::get_project_by_path(&format!("/tmp/test_project_{}", project_id)).unwrap().unwrap();
+    let after_rescan =
+        runyard_lib::db::get_project_by_path(&format!("/tmp/test_project_{}", project_id))
+            .unwrap()
+            .unwrap();
     assert!(after_rescan.is_favorite);
     assert_eq!(after_rescan.preferred_ide, Some("code".to_string()));
     assert_eq!(after_rescan.tags, vec!["backend".to_string()]);
