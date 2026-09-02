@@ -14,6 +14,8 @@ use uuid::Uuid;
 
 #[tauri::command]
 pub fn get_projects() -> Result<Vec<Project>> {
+    let _ = crate::reconcile::reconcile_catalog();
+
     crate::db::get_all_projects()
 }
 
@@ -54,7 +56,7 @@ pub fn inspect_project_path(path: String) -> Result<ProjectInspection> {
         .map(|proj| proj.id.clone())
         .unwrap_or_else(|| Uuid::new_v4().to_string());
 
-    let services: Vec<Service> = scanned_services
+    let mut services: Vec<Service> = scanned_services
         .into_iter()
         .map(|s| Service {
             id: Uuid::new_v4().to_string(),
@@ -64,15 +66,19 @@ pub fn inspect_project_path(path: String) -> Result<ProjectInspection> {
             service_type: s.service_type,
             languages: s.languages,
             frameworks: s.frameworks,
+            is_runnable: false,
             created_at: chrono::Utc::now().to_rfc3339(),
         })
         .collect();
 
     let mut run_configs = crate::runtime_detector::detect_run_configs(&path);
-    for svc in &services {
+    for svc in &mut services {
         let svc_full_path = p.join(&svc.path);
         let mut svc_configs =
             crate::runtime_detector::detect_run_configs(&svc_full_path.to_string_lossy());
+        if !svc_configs.is_empty() {
+            svc.is_runnable = true;
+        }
         for cfg in &mut svc_configs {
             cfg.service_id = Some(svc.id.clone());
             cfg.service_name = Some(svc.name.clone());
@@ -80,7 +86,7 @@ pub fn inspect_project_path(path: String) -> Result<ProjectInspection> {
         run_configs.extend(svc_configs);
     }
 
-    let project = Project {
+    let mut project = Project {
         id: project_id,
         name,
         path: path.clone(),
@@ -101,6 +107,9 @@ pub fn inspect_project_path(path: String) -> Result<ProjectInspection> {
             .unwrap_or_default(),
         last_opened: existing.as_ref().and_then(|e| e.last_opened.clone()),
         last_run: existing.as_ref().and_then(|e| e.last_run.clone()),
+        source: crate::models::ProjectSource::Manual,
+        parent_project_id: None,
+        is_runnable: false,
         created_at: existing
             .as_ref()
             .map(|e| e.created_at.clone())
@@ -181,7 +190,7 @@ pub fn scan_projects() -> Result<Vec<Project>> {
                         .map(|proj| proj.id.clone())
                         .unwrap_or_else(|| Uuid::new_v4().to_string());
 
-                    let project = Project {
+                    let mut project = Project {
                         id: project_id.clone(),
                         name,
                         path: p.path.clone(),
@@ -202,6 +211,9 @@ pub fn scan_projects() -> Result<Vec<Project>> {
                             .unwrap_or_default(),
                         last_opened: existing.as_ref().and_then(|e| e.last_opened.clone()),
                         last_run: existing.as_ref().and_then(|e| e.last_run.clone()),
+                        source: crate::models::ProjectSource::Discovered,
+                        parent_project_id: None,
+                        is_runnable: false,
                         created_at: existing
                             .as_ref()
                             .map(|e| e.created_at.clone())
@@ -211,15 +223,16 @@ pub fn scan_projects() -> Result<Vec<Project>> {
                     crate::db::upsert_project(&project)?;
 
                     // Save nested services
-                    for svc in p.services {
+                    for svc in &p.services {
                         let service = Service {
+                            is_runnable: false,
                             id: Uuid::new_v4().to_string(),
                             project_id: project_id.clone(),
-                            name: svc.name,
-                            path: svc.relative_path,
-                            service_type: svc.service_type,
-                            languages: svc.languages,
-                            frameworks: svc.frameworks,
+                            name: svc.name.clone(),
+                            path: svc.relative_path.clone(),
+                            service_type: svc.service_type.clone(),
+                            languages: svc.languages.clone(),
+                            frameworks: svc.frameworks.clone(),
                             created_at: chrono::Utc::now().to_rfc3339(),
                         };
                         let _ = crate::db::upsert_service(&service);
@@ -227,11 +240,35 @@ pub fn scan_projects() -> Result<Vec<Project>> {
 
                     // Populate detected run configs
                     let detected_configs = crate::runtime_detector::detect_run_configs(&p.path);
+
+                    let parent_path_buf = Path::new(&p.path);
+                    let mut all_detected = Vec::new();
                     for cfg in detected_configs {
+                        all_detected.push((cfg, None));
+                    }
+                    for svc in &p.services {
+                        let svc_path = parent_path_buf.join(&svc.relative_path);
+                        let svc_configs = crate::runtime_detector::detect_run_configs(
+                            &svc_path.to_string_lossy(),
+                        );
+                        // Find the corresponding service ID from the DB
+                        let svc_id = crate::db::get_services(&project_id)
+                            .ok()
+                            .unwrap_or_default()
+                            .into_iter()
+                            .find(|s| s.name == svc.name)
+                            .map(|s| s.id.clone());
+                        for mut cfg in svc_configs {
+                            cfg.name = format!("[{}] {}", svc.name, cfg.name);
+                            cfg.working_dir = Some(svc_path.to_string_lossy().to_string());
+                            all_detected.push((cfg, svc_id.clone()));
+                        }
+                    }
+                    for (cfg, svc_id) in all_detected {
                         let run_config = RunConfiguration {
                             id: Uuid::new_v4().to_string(),
                             project_id: project_id.clone(),
-                            service_id: None,
+                            service_id: svc_id,
                             name: cfg.name,
                             command: cfg.command,
                             args: cfg.args,
@@ -253,6 +290,8 @@ pub fn scan_projects() -> Result<Vec<Project>> {
         }
     }
 
+    let _ = crate::reconcile::reconcile_catalog();
+
     crate::db::get_all_projects()
 }
 
@@ -273,6 +312,8 @@ pub fn set_project_ide(project_id: String, ide_id: String) -> Result<()> {
 
 #[tauri::command]
 pub fn search_projects(query: String) -> Result<Vec<Project>> {
+    let _ = crate::reconcile::reconcile_catalog();
+
     let projects = crate::db::get_all_projects()?;
     let q = query.to_lowercase();
     Ok(projects

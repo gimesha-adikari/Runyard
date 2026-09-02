@@ -237,8 +237,81 @@ pub fn detect_project_type(path: &str) -> DetectionResult {
     frameworks.dedup();
     languages.dedup();
 
+    // Map to conceptual category
+    let mut category = "Unknown".to_string();
+
+    // Infrastructure
+    if frameworks.contains(&"Docker Compose".to_string())
+        || frameworks.contains(&"Make".to_string())
+    {
+        category = "Infrastructure".to_string();
+    }
+
+    // Applications (Frontend/Fullstack)
+    let app_frameworks = [
+        "React",
+        "Next.js",
+        "Vue",
+        "Nuxt",
+        "Svelte",
+        "Astro",
+        "Remix",
+        "Tauri",
+        "Electron",
+        "ASP.NET Core",
+    ];
+    for af in app_frameworks {
+        if frameworks.contains(&af.to_string()) {
+            category = "Application".to_string();
+            break;
+        }
+    }
+
+    // Services (Backend API)
+    if category == "Unknown" {
+        let svc_frameworks = [
+            "Express",
+            "NestJS",
+            "Fastify",
+            "Axum",
+            "Actix Web",
+            "Gin",
+            "Echo",
+            "Fiber",
+            "Django",
+            "Flask",
+            "FastAPI",
+            "Spring Boot",
+            "Quarkus",
+        ];
+        for sf in svc_frameworks {
+            if frameworks.contains(&sf.to_string()) {
+                category = "Service".to_string();
+                break;
+            }
+        }
+    }
+
+    // Libraries / Tools mapping could be refined by looking at package.json "bin" vs "main" or Cargo.toml "[lib]"
+    if category == "Unknown" {
+        if let Ok(c) = std::fs::read_to_string(p.join("Cargo.toml")) {
+            if c.contains("[lib]") {
+                category = "Library".to_string();
+            } else if c.contains("[[bin]]") {
+                category = "Tool".to_string();
+            }
+        } else if let Ok(c) = std::fs::read_to_string(p.join("package.json")) {
+            // Simple heuristic for Node
+            if c.contains("\"bin\":") {
+                category = "Tool".to_string();
+            } else if !c.contains("\"start\":") && !c.contains("\"dev\":") {
+                category = "Library".to_string();
+            }
+        }
+    }
+
     DetectionResult {
-        project_type,
+        project_type: Some(category),
         languages,
         frameworks,
     }

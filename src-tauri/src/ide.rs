@@ -110,15 +110,44 @@ pub fn detect_ides() -> Vec<DetectedIde> {
                             for sub_entry in sub.flatten() {
                                 let bin_dir = sub_entry.path().join("bin");
                                 if bin_dir.is_dir() {
-                                    seen_ids.insert(id.clone());
-                                    ides.push(DetectedIde {
-                                        id: id.clone(),
-                                        name: format!("JetBrains {}", app_name),
-                                        command: bin_dir.to_string_lossy().to_string(),
-                                        icon: None,
-                                        installed_via: "toolbox".to_string(),
-                                    });
-                                    break;
+                                    let mut exec_path = None;
+                                    if let Ok(bin_entries) = std::fs::read_dir(&bin_dir) {
+                                        for be in bin_entries.flatten() {
+                                            if let Some(name) = be.file_name().to_str() {
+                                                let valid_launchers = [
+                                                    "idea.sh",
+                                                    "pycharm.sh",
+                                                    "webstorm.sh",
+                                                    "phpstorm.sh",
+                                                    "rubymine.sh",
+                                                    "goland.sh",
+                                                    "rider.sh",
+                                                    "clion.sh",
+                                                    "datagrip.sh",
+                                                    "studio.sh",
+                                                    "rustrover.sh",
+                                                    "fleet",
+                                                ];
+                                                if valid_launchers.contains(&name) {
+                                                    exec_path = Some(
+                                                        be.path().to_string_lossy().to_string(),
+                                                    );
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                    }
+                                    if let Some(cmd_path) = exec_path {
+                                        seen_ids.insert(id.clone());
+                                        ides.push(DetectedIde {
+                                            id: id.clone(),
+                                            name: format!("JetBrains {}", app_name),
+                                            command: cmd_path,
+                                            icon: None,
+                                            installed_via: "toolbox".to_string(),
+                                        });
+                                        break;
+                                    }
                                 }
                             }
                         }

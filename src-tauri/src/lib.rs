@@ -7,6 +7,7 @@ pub mod ide;
 pub mod models;
 pub mod process_manager;
 pub mod pty;
+mod reconcile;
 pub mod runtime_detector;
 pub mod scanner;
 
@@ -106,3 +107,4 @@ pub fn run() {
         }
     });
 }
+mod reconcile_tests;

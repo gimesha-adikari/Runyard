@@ -1,6 +1,12 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum ProjectSource {
+    Discovered,
+    Manual,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Project {
     pub id: String,
@@ -19,6 +25,9 @@ pub struct Project {
     pub last_opened: Option<String>,
     pub last_run: Option<String>,
     pub created_at: String,
+    pub source: ProjectSource,
+    pub parent_project_id: Option<String>,
+    pub is_runnable: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -30,6 +39,7 @@ pub struct Service {
     pub service_type: Option<String>,
     pub languages: Vec<String>,
     pub frameworks: Vec<String>,
+    pub is_runnable: bool,
     pub created_at: String,
 }
 

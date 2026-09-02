@@ -94,3 +94,11 @@ export function useSearchProjects(query: string) {
     enabled: query.length >= 2,
   });
 }
+
+export function useProjectServices(projectId: string) {
+  return useQuery({
+    queryKey: ['projects', projectId, 'services'],
+    queryFn: () => tauriApi.getProjectServices(projectId),
+    enabled: !!projectId,
+  });
+}

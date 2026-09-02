@@ -1,6 +1,6 @@
 use crate::error::Result;
 use crate::models::{ScannedProject, ScannedService};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use walkdir::{DirEntry, WalkDir};
 
 const SKIPPED_DIRS: &[&str] = &[
@@ -33,7 +33,6 @@ const SKIPPED_DIRS: &[&str] = &[
 ];
 
 const PROJECT_FILES: &[&str] = &[
-    ".git",
     "package.json",
     "Cargo.toml",
     "go.mod",
@@ -141,61 +140,59 @@ pub fn scan_directory(root: &str) -> Result<Vec<ScannedProject>> {
     }
 
     let mut projects = Vec::new();
-    let walker = WalkDir::new(root)
+    let mut it = WalkDir::new(root)
         .max_depth(5)
         .follow_links(false)
         .into_iter()
         .filter_entry(|e| !should_skip(e));
 
-    let mut skip_subdirs_of: Option<std::path::PathBuf> = None;
-
-    for entry in walker.filter_map(|e| e.ok()) {
+    while let Some(Ok(entry)) = it.next() {
         if !entry.file_type().is_dir() {
             continue;
         }
 
         let path = entry.path();
-
-        if let Some(ref skip_root) = skip_subdirs_of {
-            if path.starts_with(skip_root) && path != skip_root.as_path() {
-                continue;
-            } else {
-                skip_subdirs_of = None;
-            }
-        }
-
         let path_str = path.to_string_lossy().to_string();
-        let mut signals = Vec::new();
-        let mut has_git = false;
 
+        let has_git = path.join(".git").exists();
+
+        let mut has_project_signal = false;
+        let mut signals = Vec::new();
+        if has_git {
+            signals.push(".git".to_string());
+        }
         for &file in PROJECT_FILES {
             if path.join(file).exists() {
                 signals.push(file.to_string());
-                if file == ".git" {
-                    has_git = true;
-                }
+                has_project_signal = true;
             }
         }
-
-        if let Ok(entries) = std::fs::read_dir(path) {
-            for e in entries.flatten() {
-                if let Some(ext) = e.path().extension().and_then(|s| s.to_str()) {
-                    if ext == "sln" || ext == "csproj" || ext == "fsproj" {
-                        signals.push(e.file_name().to_string_lossy().to_string());
+        if !has_project_signal {
+            if let Ok(entries) = std::fs::read_dir(path) {
+                for e in entries.flatten() {
+                    if let Some(ext) = e.path().extension().and_then(|s| s.to_str()) {
+                        if ext == "sln" || ext == "csproj" || ext == "fsproj" {
+                            signals.push(e.file_name().to_string_lossy().to_string());
+                            has_project_signal = true;
+                        }
                     }
                 }
             }
         }
 
-        if !signals.is_empty() {
-            let services = detect_services_in_project(&path_str);
+        // A directory is a project root if it has `.git` OR (it has a project signal AND is not inside another project).
+        // Since WalkDir explores top-down, the first one we encounter is the top-most project root.
+        if has_git || has_project_signal {
+            let services = Vec::new();
             projects.push(ScannedProject {
                 path: path_str,
                 signals,
                 has_git,
                 services,
             });
-            skip_subdirs_of = Some(path.to_path_buf());
+            // We found a project root! Skip descending into its subdirectories
+            // because they are now owned by this project as services.
+            // it.skip_current_dir(); // removed to allow finding nested repos/subprojects
         }
     }
 

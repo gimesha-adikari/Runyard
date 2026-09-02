@@ -3,6 +3,8 @@ export interface Project {
   name: string;
   path: string;
   project_type: string | null;
+  parent_project_id: string | null;
+  is_runnable: boolean;
   languages: string[];
   frameworks: string[];
   has_git: boolean;
@@ -25,6 +27,7 @@ export interface Service {
   service_type: string | null;
   languages: string[];
   frameworks: string[];
+  is_runnable: boolean;
   created_at: string;
 }
 

@@ -67,6 +67,9 @@ pub fn migrate(conn: &mut Connection) -> Result<()> {
                 tags TEXT,
                 last_opened TEXT,
                 last_run TEXT,
+                source TEXT NOT NULL DEFAULT 'Discovered',
+                parent_project_id TEXT,
+                is_runnable BOOLEAN NOT NULL DEFAULT 0,
                 created_at TEXT NOT NULL
             )",
             [],
@@ -162,6 +165,7 @@ pub fn migrate(conn: &mut Connection) -> Result<()> {
                 service_type TEXT,
                 languages TEXT,
                 frameworks TEXT,
+                is_runnable BOOLEAN NOT NULL DEFAULT 0,
                 created_at TEXT NOT NULL,
                 FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
             )",
@@ -262,10 +266,58 @@ pub fn migrate(conn: &mut Connection) -> Result<()> {
         }
     }
 
-    tx.execute(
-        "INSERT INTO schema_version (version) VALUES (3) ON CONFLICT(version) DO UPDATE SET version = 3",
-        [],
-    )?;
+    if current_version < 4 {
+        let mut pragma_proj = tx.prepare("PRAGMA table_info(projects)")?;
+        let proj_columns: Vec<String> = pragma_proj
+            .query_map([], |row| row.get(1))?
+            .filter_map(|r| r.ok())
+            .collect();
+        drop(pragma_proj);
+
+        if !proj_columns.contains(&"source".to_string()) {
+            tx.execute(
+                "ALTER TABLE projects ADD COLUMN source TEXT NOT NULL DEFAULT 'Discovered'",
+                [],
+            )?;
+        }
+    }
+    tx.execute("INSERT INTO schema_version (version) VALUES (4) ON CONFLICT(version) DO UPDATE SET version = 4", [])?;
+
+    if current_version < 5 {
+        let mut pragma_stmt = tx.prepare("PRAGMA table_info(projects)")?;
+        let columns: Vec<String> = pragma_stmt
+            .query_map([], |row| row.get(1))?
+            .filter_map(|r| r.ok())
+            .collect();
+        drop(pragma_stmt);
+        if !columns.contains(&"parent_project_id".to_string()) {
+            tx.execute("ALTER TABLE projects ADD COLUMN parent_project_id TEXT", [])?;
+        }
+        if !columns.contains(&"is_runnable".to_string()) {
+            tx.execute(
+                "ALTER TABLE projects ADD COLUMN is_runnable BOOLEAN NOT NULL DEFAULT 0",
+                [],
+            )?;
+        }
+
+        let mut pragma_svc = tx.prepare("PRAGMA table_info(services)")?;
+        let svc_columns: Vec<String> = pragma_svc
+            .query_map([], |row| row.get(1))?
+            .filter_map(|r| r.ok())
+            .collect();
+        drop(pragma_svc);
+        if !svc_columns.contains(&"is_runnable".to_string()) {
+            tx.execute(
+                "ALTER TABLE services ADD COLUMN is_runnable BOOLEAN NOT NULL DEFAULT 0",
+                [],
+            )?;
+        }
+
+        tx.execute(
+            "INSERT OR REPLACE INTO schema_version (version) VALUES (5)",
+            [],
+        )?;
+    }
 
     tx.commit()?;
 
@@ -275,7 +327,7 @@ pub fn migrate(conn: &mut Connection) -> Result<()> {
 pub fn get_all_projects() -> Result<Vec<Project>> {
     let conn = get_connection()?;
     let mut stmt = conn.prepare(
-        "SELECT id, name, path, project_type, languages, frameworks, has_git, git_branch, git_remote, preferred_ide, default_run_config_id, is_favorite, tags, last_opened, last_run, created_at FROM projects"
+        "SELECT id, name, path, project_type, languages, frameworks, has_git, git_branch, git_remote, preferred_ide, default_run_config_id, is_favorite, tags, last_opened, last_run, created_at, source, parent_project_id, is_runnable FROM projects"
     )?;
 
     let projects = stmt.query_map([], |row| {
@@ -296,6 +348,16 @@ pub fn get_all_projects() -> Result<Vec<Project>> {
             last_opened: row.get(13)?,
             last_run: row.get(14)?,
             created_at: row.get(15)?,
+            source: {
+                let src_str: String = row.get(16)?;
+                if src_str == "Manual" {
+                    crate::models::ProjectSource::Manual
+                } else {
+                    crate::models::ProjectSource::Discovered
+                }
+            },
+            parent_project_id: row.get(17).unwrap_or(None),
+            is_runnable: row.get(18).unwrap_or(false),
         })
     })?;
 
@@ -309,7 +371,7 @@ pub fn get_all_projects() -> Result<Vec<Project>> {
 pub fn get_project(id: &str) -> Result<Project> {
     let conn = get_connection()?;
     let mut stmt = conn.prepare(
-        "SELECT id, name, path, project_type, languages, frameworks, has_git, git_branch, git_remote, preferred_ide, default_run_config_id, is_favorite, tags, last_opened, last_run, created_at FROM projects WHERE id = ?"
+        "SELECT id, name, path, project_type, languages, frameworks, has_git, git_branch, git_remote, preferred_ide, default_run_config_id, is_favorite, tags, last_opened, last_run, created_at, source, parent_project_id, is_runnable FROM projects WHERE id = ?"
     )?;
 
     let p = stmt.query_row([id], |row| {
@@ -330,6 +392,16 @@ pub fn get_project(id: &str) -> Result<Project> {
             last_opened: row.get(13)?,
             last_run: row.get(14)?,
             created_at: row.get(15)?,
+            source: {
+                let src_str: String = row.get(16)?;
+                if src_str == "Manual" {
+                    crate::models::ProjectSource::Manual
+                } else {
+                    crate::models::ProjectSource::Discovered
+                }
+            },
+            parent_project_id: row.get(17).unwrap_or(None),
+            is_runnable: row.get(18).unwrap_or(false),
         })
     });
 
@@ -339,7 +411,7 @@ pub fn get_project(id: &str) -> Result<Project> {
 pub fn get_project_by_path(path: &str) -> Result<Option<Project>> {
     let conn = get_connection()?;
     let mut stmt = conn.prepare(
-        "SELECT id, name, path, project_type, languages, frameworks, has_git, git_branch, git_remote, preferred_ide, default_run_config_id, is_favorite, tags, last_opened, last_run, created_at FROM projects WHERE path = ?"
+        "SELECT id, name, path, project_type, languages, frameworks, has_git, git_branch, git_remote, preferred_ide, default_run_config_id, is_favorite, tags, last_opened, last_run, created_at, source, parent_project_id, is_runnable FROM projects WHERE path = ?"
     )?;
 
     let mut rows = stmt.query([path])?;
@@ -361,6 +433,16 @@ pub fn get_project_by_path(path: &str) -> Result<Option<Project>> {
             last_opened: row.get(13)?,
             last_run: row.get(14)?,
             created_at: row.get(15)?,
+            source: {
+                let src_str: String = row.get(16)?;
+                if src_str == "Manual" {
+                    crate::models::ProjectSource::Manual
+                } else {
+                    crate::models::ProjectSource::Discovered
+                }
+            },
+            parent_project_id: row.get(17).unwrap_or(None),
+            is_runnable: row.get(18).unwrap_or(false),
         }))
     } else {
         Ok(None)
@@ -370,11 +452,11 @@ pub fn get_project_by_path(path: &str) -> Result<Option<Project>> {
 pub fn upsert_project(project: &Project) -> Result<()> {
     let conn = get_connection()?;
     conn.execute(
-        "INSERT INTO projects (id, name, path, project_type, languages, frameworks, has_git, git_branch, git_remote, preferred_ide, default_run_config_id, is_favorite, tags, last_opened, last_run, created_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
+        "INSERT INTO projects (id, name, path, project_type, languages, frameworks, has_git, git_branch, git_remote, preferred_ide, default_run_config_id, is_favorite, tags, last_opened, last_run, created_at, source)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)
          ON CONFLICT(path) DO UPDATE SET
          name = excluded.name, project_type = excluded.project_type, languages = excluded.languages, frameworks = excluded.frameworks, has_git = excluded.has_git, git_branch = excluded.git_branch, git_remote = excluded.git_remote",
-        (
+        rusqlite::params![
             &project.id,
             &project.name,
             &project.path,
@@ -391,7 +473,8 @@ pub fn upsert_project(project: &Project) -> Result<()> {
             &project.last_opened,
             &project.last_run,
             &project.created_at,
-        ),
+            serde_json::to_string(&project.source)?
+        ],
     )?;
     Ok(())
 }
@@ -405,7 +488,7 @@ pub fn delete_project(id: &str) -> Result<()> {
 pub fn get_services(project_id: &str) -> Result<Vec<Service>> {
     let conn = get_connection()?;
     let mut stmt = conn.prepare(
-        "SELECT id, project_id, name, path, service_type, languages, frameworks, created_at FROM services WHERE project_id = ?"
+        "SELECT id, project_id, name, path, service_type, languages, frameworks, is_runnable, created_at FROM services WHERE project_id = ?"
     )?;
 
     let services = stmt.query_map([project_id], |row| {
@@ -417,7 +500,8 @@ pub fn get_services(project_id: &str) -> Result<Vec<Service>> {
             service_type: row.get(4)?,
             languages: serde_json::from_str(&row.get::<_, String>(5)?).unwrap_or_default(),
             frameworks: serde_json::from_str(&row.get::<_, String>(6)?).unwrap_or_default(),
-            created_at: row.get(7)?,
+            is_runnable: row.get(7)?,
+            created_at: row.get(8)?,
         })
     })?;
 
@@ -431,11 +515,11 @@ pub fn get_services(project_id: &str) -> Result<Vec<Service>> {
 pub fn upsert_service(service: &Service) -> Result<()> {
     let conn = get_connection()?;
     conn.execute(
-        "INSERT INTO services (id, project_id, name, path, service_type, languages, frameworks, created_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+        "INSERT INTO services (id, project_id, name, path, service_type, languages, frameworks, is_runnable, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
          ON CONFLICT(id) DO UPDATE SET
-         name = excluded.name, path = excluded.path, service_type = excluded.service_type, languages = excluded.languages, frameworks = excluded.frameworks",
-        (
+         name = excluded.name, path = excluded.path, service_type = excluded.service_type, languages = excluded.languages, frameworks = excluded.frameworks, is_runnable = excluded.is_runnable",
+        rusqlite::params![
             &service.id,
             &service.project_id,
             &service.name,
@@ -443,8 +527,9 @@ pub fn upsert_service(service: &Service) -> Result<()> {
             &service.service_type,
             serde_json::to_string(&service.languages)?,
             serde_json::to_string(&service.frameworks)?,
-            &service.created_at,
-        ),
+            service.is_runnable,
+            &service.created_at
+        ]
     )?;
     Ok(())
 }
@@ -691,6 +776,7 @@ pub fn save_run_group(group: &RunGroup) -> Result<()> {
     }
 
     tx.commit()?;
+
     Ok(())
 }
 

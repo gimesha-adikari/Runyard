@@ -115,7 +115,7 @@ fn test_migration_from_v1_to_current_preserves_all_data() {
             |r| r.get(0),
         )
         .unwrap();
-    assert_eq!(version, 3);
+    assert_eq!(version, 5);
 
     // 5. Verify project data preservation
     let (id, name, path, is_fav, pref_ide, tags): (
@@ -218,7 +218,7 @@ fn test_migration_from_empty_database() {
             |r| r.get(0),
         )
         .unwrap();
-    assert_eq!(version, 3);
+    assert_eq!(version, 5);
 
     // Verify all tables exist
     let tables: Vec<String> = {

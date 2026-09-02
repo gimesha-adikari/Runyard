@@ -77,7 +77,7 @@ async fn test_full_project_scan_and_detection() {
 
     // 2. Detection on node-api
     let node_det = runyard_lib::detector::detect_project_type(node_path.to_str().unwrap());
-    assert_eq!(node_det.project_type, Some("node".to_string()));
+    assert_eq!(node_det.project_type, Some("Application".to_string()));
     assert!(node_det.languages.contains(&"TypeScript".to_string()));
     assert!(node_det.frameworks.contains(&"Express".to_string()));
     assert!(node_det.frameworks.contains(&"React".to_string()));
