@@ -46,7 +46,9 @@ test('formatRelativeTime handles null and recent dates', () => {
 test('getStatusColor returns appropriate tailwind class', () => {
   assert.equal(getStatusColor('Running'), 'bg-emerald-500');
   assert.equal(getStatusColor('Failed'), 'bg-red-500');
-  assert.equal(getStatusColor('Starting'), 'bg-amber-500');
+  assert.equal(getStatusColor('Starting'), 'bg-amber-400 animate-pulse');
+  assert.equal(getStatusColor('Stopping'), 'bg-amber-600 animate-pulse');
+  assert.equal(getStatusColor('Exited'), 'bg-blue-500');
   assert.equal(getStatusColor('Stopped'), 'bg-zinc-500');
 });
 

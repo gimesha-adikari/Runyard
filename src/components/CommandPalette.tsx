@@ -1,3 +1,4 @@
+import { filterPaletteItems } from '../lib/palette-filter';
 import { useEffect, useState, useRef, type KeyboardEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useUiStore } from '../stores/ui-store';
@@ -16,7 +17,7 @@ import {
   FolderPlus,
   StopCircle,
 } from 'lucide-react';
-import { cn, truncatePath } from '../lib/utils';
+import { getErrorMessage, cn, truncatePath } from '../lib/utils';
 import { Project } from '../types';
 
 interface PaletteItem {
@@ -44,7 +45,6 @@ export function CommandPalette() {
 
   const activeProcesses = processes.filter((p) => p.status === 'Running' || p.status === 'Starting');
 
-  // Build items list
   const navItems: PaletteItem[] = [
     {
       id: 'nav-overview',
@@ -92,8 +92,8 @@ export function CommandPalette() {
         try {
           await scanProjects.mutateAsync();
           toast.success('Project scan completed successfully');
-        } catch (e: any) {
-          toast.error(e?.message || 'Failed to scan projects');
+        } catch (e) {
+          toast.error(getErrorMessage(e) || 'Failed to scan projects');
         }
       },
     },
@@ -141,15 +141,7 @@ export function CommandPalette() {
   const allItems: PaletteItem[] = [...navItems, ...actionItems, ...projectItems];
 
   const filteredItems = query.trim()
-    ? allItems.filter((item) => {
-        const q = query.toLowerCase();
-        return (
-          item.title.toLowerCase().includes(q) ||
-          (item.subtitle && item.subtitle.toLowerCase().includes(q)) ||
-          (item.badge && item.badge.toLowerCase().includes(q)) ||
-          item.category.toLowerCase().includes(q)
-        );
-      })
+    ? filterPaletteItems(allItems, query)
     : [...navItems, ...actionItems, ...projectItems.slice(0, 8)];
 
   useEffect(() => {
@@ -217,7 +209,6 @@ export function CommandPalette() {
         className="bg-zinc-900 w-full max-w-2xl rounded-xl border border-zinc-800 shadow-2xl overflow-hidden flex flex-col max-h-[75vh]"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Search Header */}
         <div className="flex items-center px-4 border-b border-zinc-800 bg-zinc-950/60">
           <Search className="w-4 h-4 text-emerald-400 shrink-0" />
           <input
@@ -238,7 +229,6 @@ export function CommandPalette() {
           </button>
         </div>
 
-        {/* Results List */}
         <div className="overflow-y-auto p-2 space-y-1 divide-y divide-zinc-800/40">
           {filteredItems.length === 0 ? (
             <div className="px-4 py-10 text-center text-zinc-500 text-xs">
@@ -318,7 +308,6 @@ export function CommandPalette() {
           )}
         </div>
 
-        {/* Footer */}
         <div className="px-4 py-2 bg-zinc-950 border-t border-zinc-800 flex items-center justify-between text-[11px] text-zinc-500 font-mono select-none">
           <div className="flex items-center gap-3">
             <span>↑↓ Navigate</span>

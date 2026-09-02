@@ -23,7 +23,7 @@ import {
   Copy,
   Check,
 } from 'lucide-react';
-import { cn } from '../lib/utils';
+import { getErrorMessage, cn } from '../lib/utils';
 
 interface GitViewProps {
   projectPath: string;
@@ -55,8 +55,8 @@ export const GitView: React.FC<GitViewProps> = ({ projectPath }) => {
       const msg = await gitFetchMutation.mutateAsync(projectPath);
       toast.success(msg || 'Fetch completed successfully');
       refetch();
-    } catch (e: any) {
-      toast.error(e?.message || 'Git fetch failed');
+    } catch (e) {
+      toast.error(getErrorMessage(e) || 'Git fetch failed');
     }
   };
 
@@ -66,8 +66,8 @@ export const GitView: React.FC<GitViewProps> = ({ projectPath }) => {
       toast.success(msg || 'Pull completed successfully');
       refetch();
       refetchBranches();
-    } catch (e: any) {
-      toast.error(e?.message || 'Git pull failed');
+    } catch (e) {
+      toast.error(getErrorMessage(e) || 'Git pull failed');
     }
   };
 
@@ -77,8 +77,8 @@ export const GitView: React.FC<GitViewProps> = ({ projectPath }) => {
       toast.success(`Switched to branch '${branchName}'`);
       refetch();
       refetchBranches();
-    } catch (e: any) {
-      toast.error(e?.message || 'Failed to checkout branch');
+    } catch (e) {
+      toast.error(getErrorMessage(e) || 'Failed to checkout branch');
     }
   };
 
@@ -92,8 +92,8 @@ export const GitView: React.FC<GitViewProps> = ({ projectPath }) => {
       setShowNewBranchModal(false);
       refetch();
       refetchBranches();
-    } catch (e: any) {
-      toast.error(e?.message || 'Failed to create branch');
+    } catch (e) {
+      toast.error(getErrorMessage(e) || 'Failed to create branch');
     }
   };
 
@@ -131,7 +131,6 @@ export const GitView: React.FC<GitViewProps> = ({ projectPath }) => {
 
   return (
     <div className="space-y-4">
-      {/* Top Controls Bar */}
       <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 bg-zinc-900 border border-zinc-800 rounded-xl">
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2 px-2.5 py-1 bg-zinc-950 border border-zinc-800 rounded-md text-xs">
@@ -195,7 +194,6 @@ export const GitView: React.FC<GitViewProps> = ({ projectPath }) => {
         </div>
       </div>
 
-      {/* Tabs */}
       <div className="flex border-b border-zinc-800 text-xs">
         <button
           onClick={() => setActiveTab('changes')}
@@ -232,7 +230,6 @@ export const GitView: React.FC<GitViewProps> = ({ projectPath }) => {
         </button>
       </div>
 
-      {/* Changes Tab View */}
       {activeTab === 'changes' && (
         <div className="space-y-4">
           {totalChanges === 0 ? (
@@ -243,7 +240,6 @@ export const GitView: React.FC<GitViewProps> = ({ projectPath }) => {
             </div>
           ) : (
             <div className="space-y-4">
-              {/* Staged files */}
               {status.staged_files && status.staged_files.length > 0 && (
                 <div className="space-y-1.5">
                   <div className="flex items-center gap-2 text-xs font-semibold text-emerald-400 uppercase tracking-wider">
@@ -268,7 +264,6 @@ export const GitView: React.FC<GitViewProps> = ({ projectPath }) => {
                 </div>
               )}
 
-              {/* Modified files */}
               {status.modified_files && status.modified_files.length > 0 && (
                 <div className="space-y-1.5">
                   <div className="flex items-center gap-2 text-xs font-semibold text-amber-400 uppercase tracking-wider">
@@ -293,7 +288,6 @@ export const GitView: React.FC<GitViewProps> = ({ projectPath }) => {
                 </div>
               )}
 
-              {/* Untracked files */}
               {status.untracked_files && status.untracked_files.length > 0 && (
                 <div className="space-y-1.5">
                   <div className="flex items-center gap-2 text-xs font-semibold text-zinc-400 uppercase tracking-wider">
@@ -318,7 +312,6 @@ export const GitView: React.FC<GitViewProps> = ({ projectPath }) => {
         </div>
       )}
 
-      {/* History Tab View */}
       {activeTab === 'history' && (
         <div className="space-y-2">
           {status.recent_commits?.length === 0 ? (
@@ -356,7 +349,6 @@ export const GitView: React.FC<GitViewProps> = ({ projectPath }) => {
         </div>
       )}
 
-      {/* Branches Tab View */}
       {activeTab === 'branches' && (
         <div className="space-y-1.5">
           {branches?.map((b) => (
@@ -410,7 +402,6 @@ export const GitView: React.FC<GitViewProps> = ({ projectPath }) => {
         </div>
       )}
 
-      {/* File Diff Modal */}
       {selectedFileForDiff && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 animate-in fade-in duration-100"
@@ -471,7 +462,6 @@ export const GitView: React.FC<GitViewProps> = ({ projectPath }) => {
         </div>
       )}
 
-      {/* New Branch Modal */}
       {showNewBranchModal && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 animate-in fade-in duration-100"

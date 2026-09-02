@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { RunConfiguration, Service } from '../types';
-import { Plus, Trash2, X, Play, ShieldCheck, ShieldAlert } from 'lucide-react';
+import { Plus, Trash2, X, Play, ShieldAlert } from 'lucide-react';
 
 interface RunConfigModalProps {
   isOpen: boolean;
@@ -29,7 +29,6 @@ export const RunConfigModal: React.FC<RunConfigModalProps> = ({
   const [workingDir, setWorkingDir] = useState('');
   const [envVars, setEnvVars] = useState<Array<{ key: string; value: string }>>([]);
   const [isDefault, setIsDefault] = useState(false);
-  const [isTrusted, setIsTrusted] = useState(true);
 
   useEffect(() => {
     if (existingConfig) {
@@ -42,7 +41,6 @@ export const RunConfigModal: React.FC<RunConfigModalProps> = ({
         Object.entries(existingConfig.env_vars || {}).map(([key, value]) => ({ key, value }))
       );
       setIsDefault(existingConfig.is_default);
-      setIsTrusted(existingConfig.is_trusted);
     } else {
       setName('');
       setServiceId('');
@@ -52,7 +50,6 @@ export const RunConfigModal: React.FC<RunConfigModalProps> = ({
       setWorkingDir(projectPath);
       setEnvVars([]);
       setIsDefault(false);
-      setIsTrusted(true);
     }
   }, [existingConfig, projectPath, isOpen]);
 
@@ -125,9 +122,10 @@ export const RunConfigModal: React.FC<RunConfigModalProps> = ({
       working_dir: workingDir.trim() || null,
       env_file: null,
       env_vars: envMap,
-      is_trusted: isTrusted,
+      is_trusted: existingConfig?.is_trusted || false,
+      trusted_fingerprint: existingConfig?.trusted_fingerprint || null,
       is_default: isDefault,
-      source: existingConfig ? existingConfig.source : 'UserCreated',
+      source: existingConfig?.source || 'UserCreated',
       created_at: existingConfig ? existingConfig.created_at : new Date().toISOString(),
     };
 
@@ -146,7 +144,6 @@ export const RunConfigModal: React.FC<RunConfigModalProps> = ({
         className="bg-zinc-900 border border-zinc-800 rounded-xl w-full max-w-lg overflow-hidden shadow-2xl flex flex-col max-h-[90vh]"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800 bg-zinc-950/60">
           <div className="flex items-center gap-2.5">
             <div className="p-2 bg-emerald-500/10 rounded-lg text-emerald-400">
@@ -168,7 +165,6 @@ export const RunConfigModal: React.FC<RunConfigModalProps> = ({
           </button>
         </div>
 
-        {/* Form Body */}
         <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-5 space-y-4 text-xs">
           <div>
             <label className="block text-xs font-medium text-zinc-300 mb-1">Configuration Name</label>
@@ -218,7 +214,6 @@ export const RunConfigModal: React.FC<RunConfigModalProps> = ({
             />
           </div>
 
-          {/* Arguments array editor */}
           <div>
             <label className="block text-xs font-medium text-zinc-300 mb-1">
               Command Arguments ({argsList.length})
@@ -270,7 +265,6 @@ export const RunConfigModal: React.FC<RunConfigModalProps> = ({
               </button>
             </div>
 
-            {/* Live Command Preview */}
             <div className="mt-2 p-2 bg-zinc-950 border border-zinc-800/80 rounded text-[11px] font-mono text-zinc-400">
               <span className="text-zinc-600 mr-1">$</span>
               <span className="text-emerald-400">{command || '<executable>'}</span>{' '}
@@ -289,7 +283,6 @@ export const RunConfigModal: React.FC<RunConfigModalProps> = ({
             />
           </div>
 
-          {/* Environment Variables */}
           <div className="space-y-2 pt-2 border-t border-zinc-800/80">
             <div className="flex items-center justify-between">
               <label className="text-xs font-medium text-zinc-300">Environment Variables</label>
@@ -348,25 +341,18 @@ export const RunConfigModal: React.FC<RunConfigModalProps> = ({
               <span>Set as default run configuration for this project</span>
             </label>
 
-            <label className="flex items-center gap-2 cursor-pointer text-xs text-zinc-300 select-none">
-              <input
-                type="checkbox"
-                checked={isTrusted}
-                onChange={(e) => setIsTrusted(e.target.checked)}
-                className="rounded border-zinc-700 bg-zinc-950 text-emerald-500 focus:ring-0 focus:ring-offset-0"
-              />
-              <span className="flex items-center gap-1.5">
-                {isTrusted ? (
-                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                ) : (
-                  <ShieldAlert className="w-3.5 h-3.5 text-amber-400" />
-                )}
-                <span>Mark configuration as trusted (bypasses execution confirmation dialog)</span>
-              </span>
-            </label>
+            {existingConfig && existingConfig.is_trusted && (
+              <div className="flex items-start gap-1.5 p-2 bg-amber-500/10 border border-amber-500/20 rounded-md text-amber-200/90 text-[11px] mt-1">
+                <ShieldAlert className="w-4 h-4 shrink-0 text-amber-400" />
+                <p>
+                  This configuration is currently trusted. Modifying its execution parameters 
+                  (command, arguments, working directory, or environment variables) will require 
+                  re-approving trust on the next run.
+                </p>
+              </div>
+            )}
           </div>
 
-          {/* Footer */}
           <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-zinc-800">
             <button
               type="button"

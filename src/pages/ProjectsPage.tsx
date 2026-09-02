@@ -1,3 +1,4 @@
+import { getErrorMessage } from '../lib/utils';
 import { useState, useMemo, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useProjects, useScanProjects, useRemoveProject } from '../hooks/use-projects';
@@ -51,7 +52,6 @@ export function ProjectsPage() {
   const [newScanRootPath, setNewScanRootPath] = useState('');
   const [projectToRemove, setProjectToRemove] = useState<Project | null>(null);
 
-  // Check if ?action=import is passed via URL
   useEffect(() => {
     if (searchParams.get('action') === 'import') {
       setShowImportDialog(true);
@@ -60,7 +60,6 @@ export function ProjectsPage() {
     }
   }, [searchParams, setSearchParams]);
 
-  // Extract all unique tags
   const allTags = useMemo(() => {
     const tags = new Set<string>();
     projects.forEach((p) => p.tags.forEach((t) => tags.add(t)));
@@ -105,8 +104,8 @@ export function ProjectsPage() {
     try {
       await scanProjects.mutateAsync();
       toast.success('Projects scan completed');
-    } catch (e: any) {
-      toast.error(e?.message || 'Failed to scan projects');
+    } catch (e) {
+      toast.error(getErrorMessage(e) || 'Failed to scan projects');
     }
   };
 
@@ -117,8 +116,8 @@ export function ProjectsPage() {
       await addScanRoot.mutateAsync(newScanRootPath.trim());
       toast.success('Added scan root');
       setNewScanRootPath('');
-    } catch (e: any) {
-      toast.error(e?.message || 'Failed to add scan root');
+    } catch (e) {
+      toast.error(getErrorMessage(e) || 'Failed to add scan root');
     }
   };
 
@@ -128,14 +127,13 @@ export function ProjectsPage() {
       await removeProject.mutateAsync(projectToRemove.id);
       toast.info(`Removed '${projectToRemove.name}' from Runyard`);
       setProjectToRemove(null);
-    } catch (e: any) {
-      toast.error(e?.message || 'Failed to remove project');
+    } catch (e) {
+      toast.error(getErrorMessage(e) || 'Failed to remove project');
     }
   };
 
   return (
     <div className="p-6 max-w-7xl mx-auto w-full h-full flex flex-col space-y-5">
-      {/* Header */}
       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
         <div>
           <h1 className="text-xl font-bold text-zinc-100 flex items-center">
@@ -226,7 +224,6 @@ export function ProjectsPage() {
         </div>
       </div>
 
-      {/* Tabs & Tag Filter Bar */}
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-800/80 pb-2.5">
         <div className="flex space-x-1.5">
           <button
@@ -277,7 +274,6 @@ export function ProjectsPage() {
         )}
       </div>
 
-      {/* Projects Grid/List Content */}
       <div className="flex-1 overflow-auto min-h-0 pb-6">
         {!isLoading && filteredAndSortedProjects.length === 0 ? (
           <div className="mt-16">
@@ -321,14 +317,12 @@ export function ProjectsPage() {
         )}
       </div>
 
-      {/* Import Project Inspection Dialog */}
       <ImportProjectDialog
         isOpen={showImportDialog}
         onClose={() => setShowImportDialog(false)}
         onSuccess={(projId) => navigate(`/projects/${projId}`)}
       />
 
-      {/* Scan Roots Modal */}
       {showScanRootsModal && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 animate-in fade-in duration-100"
@@ -422,7 +416,6 @@ export function ProjectsPage() {
         </div>
       )}
 
-      {/* Safe Remove Project Confirmation Modal */}
       {projectToRemove && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 animate-in fade-in duration-100"

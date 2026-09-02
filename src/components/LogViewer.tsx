@@ -9,7 +9,7 @@ import {
   WrapText,
   Check,
 } from 'lucide-react';
-import { cn } from '../lib/utils';
+import { getErrorMessage, cn } from '../lib/utils';
 
 interface LogViewerProps {
   processId: string;
@@ -64,16 +64,14 @@ export const LogViewer: React.FC<LogViewerProps> = ({ processId, className }) =>
     try {
       await clearMutation.mutateAsync(processId);
       toast.info('Process output buffer cleared');
-    } catch (e: any) {
-      toast.error(e?.message || 'Failed to clear logs');
+    } catch (e) {
+      toast.error(getErrorMessage(e) || 'Failed to clear logs');
     }
   };
 
   return (
     <div className={cn("flex flex-col h-80 bg-zinc-950 border border-zinc-800 rounded-lg overflow-hidden font-mono text-xs select-text", className)}>
-      {/* Controls toolbar */}
       <div className="flex items-center justify-between px-3 py-1.5 bg-zinc-900 border-b border-zinc-800 text-zinc-400 gap-2 shrink-0 select-none">
-        {/* Search */}
         <div className="flex items-center gap-2 flex-1 max-w-sm">
           <div className="relative w-full">
             <Search className="w-3.5 h-3.5 text-zinc-500 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -92,7 +90,6 @@ export const LogViewer: React.FC<LogViewerProps> = ({ processId, className }) =>
           </div>
         </div>
 
-        {/* Action Controls */}
         <div className="flex items-center gap-1.5">
           <button
             onClick={() => setWordWrap(!wordWrap)}
@@ -142,7 +139,6 @@ export const LogViewer: React.FC<LogViewerProps> = ({ processId, className }) =>
         </div>
       </div>
 
-      {/* Log lines container */}
       <div
         ref={containerRef}
         onScroll={handleScroll}

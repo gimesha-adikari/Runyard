@@ -1,3 +1,5 @@
+import { open } from '@tauri-apps/plugin-dialog';
+import { getErrorMessage } from '../lib/utils';
 import React, { useState, useEffect } from 'react';
 import { tauriApi } from '../lib/tauri';
 import { ProjectInspection } from '../types';
@@ -61,9 +63,9 @@ export const ImportProjectDialog: React.FC<ImportProjectDialogProps> = ({
     try {
       const res = await tauriApi.inspectProjectPath(trimmed);
       setInspection(res);
-    } catch (e: any) {
+    } catch (e) {
       setInspection(null);
-      setError(e?.message || String(e));
+      setError(getErrorMessage(e) || String(e));
     } finally {
       setIsInspecting(false);
     }
@@ -79,8 +81,8 @@ export const ImportProjectDialog: React.FC<ImportProjectDialogProps> = ({
       toast.success(`Imported project '${proj.name}'`);
       onSuccess(proj.id);
       onClose();
-    } catch (e: any) {
-      const msg = e?.message || String(e);
+    } catch (e) {
+      const msg = getErrorMessage(e) || String(e);
       setError(msg);
       toast.error(msg);
     } finally {
@@ -99,7 +101,6 @@ export const ImportProjectDialog: React.FC<ImportProjectDialogProps> = ({
         className="bg-zinc-900 border border-zinc-800 rounded-xl w-full max-w-xl overflow-hidden shadow-2xl flex flex-col max-h-[85vh]"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800 bg-zinc-950/60">
           <div className="flex items-center gap-2.5">
             <div className="p-2 bg-emerald-500/10 rounded-lg text-emerald-400">
@@ -119,7 +120,6 @@ export const ImportProjectDialog: React.FC<ImportProjectDialogProps> = ({
           </button>
         </div>
 
-        {/* Content */}
         <div className="p-5 space-y-4 overflow-y-auto flex-1">
           <div>
             <label className="block text-xs font-medium text-zinc-300 mb-1.5">
@@ -140,6 +140,26 @@ export const ImportProjectDialog: React.FC<ImportProjectDialogProps> = ({
                 placeholder="/home/user/projects/my-app"
                 className="flex-1 bg-zinc-950 border border-zinc-800 rounded-md px-3 py-2 text-xs text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-emerald-500 font-mono"
               />
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    const selected = await open({
+                      directory: true,
+                      multiple: false,
+                    });
+                    if (selected && typeof selected === 'string') {
+                      setPath(selected);
+                      handleInspect(selected);
+                    }
+                  } catch (e) {
+                    console.error('Failed to open dialog', e);
+                  }
+                }}
+                className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-xs font-medium text-zinc-300 rounded-md transition-colors"
+              >
+                Browse...
+              </button>
               <button
                 type="button"
                 onClick={() => handleInspect(path)}
@@ -182,7 +202,6 @@ export const ImportProjectDialog: React.FC<ImportProjectDialogProps> = ({
                 </div>
               )}
 
-              {/* Detected Project Overview */}
               <div className="p-3 bg-zinc-950/60 border border-zinc-800 rounded-lg space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-semibold text-zinc-200">{inspection.project.name}</span>
@@ -193,7 +212,6 @@ export const ImportProjectDialog: React.FC<ImportProjectDialogProps> = ({
                   )}
                 </div>
 
-                {/* Tech tags */}
                 <div className="flex flex-wrap gap-1.5 pt-1">
                   {inspection.project.languages.map((l) => (
                     <span
@@ -213,7 +231,6 @@ export const ImportProjectDialog: React.FC<ImportProjectDialogProps> = ({
                   ))}
                 </div>
 
-                {/* Git state */}
                 {inspection.git_status && (
                   <div className="flex items-center gap-2 text-xs text-zinc-400 pt-1">
                     <GitBranch className="w-3.5 h-3.5 text-purple-400" />
@@ -227,7 +244,6 @@ export const ImportProjectDialog: React.FC<ImportProjectDialogProps> = ({
                 )}
               </div>
 
-              {/* Discovered Services */}
               {inspection.services.length > 0 && (
                 <div>
                   <div className="flex items-center gap-1.5 text-xs font-semibold text-zinc-300 mb-1.5">
@@ -251,7 +267,6 @@ export const ImportProjectDialog: React.FC<ImportProjectDialogProps> = ({
                 </div>
               )}
 
-              {/* Suggested Run Configurations */}
               {inspection.run_configs.length > 0 && (
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
@@ -287,7 +302,6 @@ export const ImportProjectDialog: React.FC<ImportProjectDialogProps> = ({
           )}
         </div>
 
-        {/* Footer */}
         <div className="flex items-center justify-end gap-2.5 px-5 py-3.5 bg-zinc-950 border-t border-zinc-800">
           <button
             type="button"

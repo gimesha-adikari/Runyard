@@ -32,7 +32,6 @@ export function Sidebar() {
         sidebarCollapsed ? 'w-16' : 'w-56'
       )}
     >
-      {/* Brand Header */}
       <div className="flex items-center justify-between px-4 py-4 border-b border-zinc-800/80">
         <div className="flex items-center min-w-0 overflow-hidden">
           <div className="p-1.5 bg-emerald-500/10 rounded-lg text-emerald-400 mr-2.5 shrink-0">
@@ -55,7 +54,6 @@ export function Sidebar() {
         </button>
       </div>
 
-      {/* Main Navigation */}
       <nav className="flex-1 px-2.5 py-4 space-y-1 overflow-y-auto">
         {links.map((link) => (
           <NavLink
@@ -107,7 +105,6 @@ export function Sidebar() {
         ))}
       </nav>
 
-      {/* Bottom Quick Search Launcher */}
       <div className="p-2.5 border-t border-zinc-800/80">
         <button
           onClick={toggleCommandPalette}

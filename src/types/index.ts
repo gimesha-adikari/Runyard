@@ -86,6 +86,7 @@ export interface RunConfiguration {
   env_file: string | null;
   env_vars: Record<string, string>;
   is_trusted: boolean;
+  trusted_fingerprint: string | null;
   is_default: boolean;
   source: 'Detected' | 'UserCreated';
   created_at: string;

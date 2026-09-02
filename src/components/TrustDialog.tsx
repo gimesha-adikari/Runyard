@@ -29,7 +29,6 @@ export function TrustDialog({ config, onCancel, onRunOnce, onTrustAndRun }: Prop
         className="bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl max-w-lg w-full overflow-hidden flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800 bg-zinc-950/60">
           <div className="flex items-center gap-2.5">
             <div className="p-2 bg-amber-500/10 rounded-lg text-amber-400">
@@ -49,7 +48,6 @@ export function TrustDialog({ config, onCancel, onRunOnce, onTrustAndRun }: Prop
           </button>
         </div>
 
-        {/* Body */}
         <div className="p-5 space-y-4 text-xs">
           <p className="text-zinc-300 leading-relaxed">
             This run configuration was automatically discovered in project files. Verify the command and arguments below before executing native processes on your machine.
@@ -79,7 +77,6 @@ export function TrustDialog({ config, onCancel, onRunOnce, onTrustAndRun }: Prop
           </div>
         </div>
 
-        {/* Footer */}
         <div className="flex items-center justify-end gap-2.5 px-5 py-3.5 bg-zinc-950 border-t border-zinc-800">
           <button
             onClick={onCancel}

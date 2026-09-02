@@ -96,7 +96,6 @@ export const RunGroupModal: React.FC<RunGroupModalProps> = ({
         className="bg-zinc-900 border border-zinc-800 rounded-xl w-full max-w-lg overflow-hidden shadow-2xl flex flex-col max-h-[85vh]"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800 bg-zinc-950/60">
           <div className="flex items-center gap-2.5">
             <div className="p-2 bg-blue-500/10 rounded-lg text-blue-400">
@@ -118,7 +117,6 @@ export const RunGroupModal: React.FC<RunGroupModalProps> = ({
           </button>
         </div>
 
-        {/* Form Body */}
         <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-5 space-y-4 text-xs">
           <div>
             <label className="block text-xs font-medium text-zinc-300 mb-1">Group Name</label>
@@ -209,7 +207,6 @@ export const RunGroupModal: React.FC<RunGroupModalProps> = ({
             )}
           </div>
 
-          {/* Footer */}
           <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-zinc-800">
             <button
               type="button"

@@ -21,6 +21,16 @@ export function useProcessOutput(processId: string | undefined, sinceLine: numbe
   });
 }
 
+export function useRunUntrustedOnce() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (runConfigId: string) => tauriApi.runUntrustedOnce(runConfigId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['processes'] });
+    },
+  });
+}
+
 export function useStartProcess() {
   const queryClient = useQueryClient();
   return useMutation({

@@ -1,3 +1,4 @@
+
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
@@ -66,12 +67,13 @@ export function getStatusColor(status: string): string {
     case 'Failed':
       return 'bg-red-500';
     case 'Starting':
+      return 'bg-amber-400 animate-pulse';
     case 'Stopping':
-      return 'bg-amber-500';
+      return 'bg-amber-600 animate-pulse';
     case 'Exited':
-      return 'bg-zinc-600';
+      return 'bg-blue-500';
     default:
-      return 'bg-zinc-500';
+      return 'bg-zinc-600';
   }
 }
 
@@ -85,4 +87,9 @@ export function truncatePath(path: string, maxLen: number = 42): string {
   const second = parts[1];
   
   return `${first}/${second}/.../${file}`;
+}
+
+export function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  return String(error);
 }

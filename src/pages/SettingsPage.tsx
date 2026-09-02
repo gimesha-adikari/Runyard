@@ -1,4 +1,7 @@
-import { useState, type FormEvent } from 'react';
+import { getErrorMessage } from '../lib/utils';
+import { useState, useEffect, type FormEvent } from 'react';
+import { getVersion } from '@tauri-apps/api/app';
+import { open } from '@tauri-apps/plugin-dialog';
 import { useSettings, useScanRoots, useAddScanRoot, useRemoveScanRoot } from '../hooks/use-settings';
 import { useDetectedIdes, useSetDefaultIde } from '../hooks/use-ides';
 import { useScanProjects } from '../hooks/use-projects';
@@ -15,6 +18,12 @@ import {
 } from 'lucide-react';
 
 export function SettingsPage() {
+  const [appVersion, setAppVersion] = useState('Loading...');
+  
+  useEffect(() => {
+    getVersion().then(setAppVersion).catch(() => setAppVersion('Unknown'));
+  }, []);
+
   const { data: settings } = useSettings();
   const { data: scanRoots = [] } = useScanRoots();
   const { data: ides = [] } = useDetectedIdes();
@@ -32,8 +41,8 @@ export function SettingsPage() {
       await addScanRoot.mutateAsync(newRootPath.trim());
       toast.success('Added scan root');
       setNewRootPath('');
-    } catch (e: any) {
-      toast.error(e?.message || 'Failed to add scan root');
+    } catch (e) {
+      toast.error(getErrorMessage(e) || 'Failed to add scan root');
     }
   };
 
@@ -41,8 +50,8 @@ export function SettingsPage() {
     try {
       await removeScanRoot.mutateAsync(id);
       toast.info('Removed scan root');
-    } catch (e: any) {
-      toast.error(e?.message || 'Failed to remove scan root');
+    } catch (e) {
+      toast.error(getErrorMessage(e) || 'Failed to remove scan root');
     }
   };
 
@@ -51,8 +60,8 @@ export function SettingsPage() {
       await setDefaultIde.mutateAsync(ideId);
       const ide = ides.find((i) => i.id === ideId);
       toast.success(ide ? `Default IDE set to ${ide.name}` : 'Default IDE updated');
-    } catch (e: any) {
-      toast.error(e?.message || 'Failed to update default IDE');
+    } catch (e) {
+      toast.error(getErrorMessage(e) || 'Failed to update default IDE');
     }
   };
 
@@ -60,8 +69,8 @@ export function SettingsPage() {
     try {
       await scanProjects.mutateAsync();
       toast.success('Projects scan completed');
-    } catch (e: any) {
-      toast.error(e?.message || 'Failed to scan projects');
+    } catch (e) {
+      toast.error(getErrorMessage(e) || 'Failed to scan projects');
     }
   };
 
@@ -72,7 +81,6 @@ export function SettingsPage() {
         Settings
       </h1>
 
-      {/* Project Scan Roots Section */}
       <section className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden shadow-sm">
         <div className="px-5 py-3.5 border-b border-zinc-800 bg-zinc-900/50 flex items-center justify-between">
           <div>
@@ -126,6 +134,25 @@ export function SettingsPage() {
               className="flex-1 bg-zinc-950 border border-zinc-800 rounded-md px-3 py-2 text-xs text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-emerald-500 font-mono"
             />
             <button
+              type="button"
+              onClick={async () => {
+                try {
+                  const selected = await open({
+                    directory: true,
+                    multiple: false,
+                  });
+                  if (selected && typeof selected === 'string') {
+                    setNewRootPath(selected);
+                  }
+                } catch (e) {
+                  console.error('Failed to open dialog', e);
+                }
+              }}
+              className="px-3 py-2 bg-zinc-800 hover:bg-zinc-700 text-xs font-medium text-zinc-300 rounded-md transition-colors"
+            >
+              Browse...
+            </button>
+            <button
               type="submit"
               disabled={!newRootPath.trim() || addScanRoot.isPending}
               className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-md text-xs font-medium transition-colors flex items-center gap-1 shrink-0"
@@ -137,7 +164,6 @@ export function SettingsPage() {
         </div>
       </section>
 
-      {/* IDE Preferences Section */}
       <section className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden shadow-sm">
         <div className="px-5 py-3.5 border-b border-zinc-800 bg-zinc-900/50">
           <h2 className="text-sm font-semibold text-zinc-200 flex items-center gap-2">
@@ -190,7 +216,6 @@ export function SettingsPage() {
         </div>
       </section>
 
-      {/* Keyboard Shortcuts Reference Section */}
       <section className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden shadow-sm">
         <div className="px-5 py-3.5 border-b border-zinc-800 bg-zinc-900/50">
           <h2 className="text-sm font-semibold text-zinc-200 flex items-center gap-2">
@@ -228,7 +253,6 @@ export function SettingsPage() {
         </div>
       </section>
 
-      {/* About Section */}
       <section className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden shadow-sm">
         <div className="px-5 py-3.5 border-b border-zinc-800 bg-zinc-900/50">
           <h2 className="text-sm font-semibold text-zinc-200 flex items-center gap-2">
@@ -239,7 +263,7 @@ export function SettingsPage() {
         <div className="p-5 text-xs text-zinc-400 space-y-2">
           <div className="flex justify-between max-w-sm">
             <span>Version:</span>
-            <span className="text-zinc-200 font-mono">0.1.0-alpha</span>
+            <span className="text-zinc-200 font-mono">{appVersion}</span>
           </div>
           <div className="flex justify-between max-w-sm">
             <span>Architecture:</span>

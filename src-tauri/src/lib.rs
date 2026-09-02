@@ -30,6 +30,7 @@ pub fn run() {
         .manage(process_manager)
         .manage(pty_manager)
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             commands::get_projects,
             commands::get_project,

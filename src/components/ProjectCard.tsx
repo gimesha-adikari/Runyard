@@ -18,7 +18,7 @@ import { useRunConfigs } from '../hooks/use-run-configs';
 import { useDetectedIdes, useOpenInIde } from '../hooks/use-ides';
 import { tauriApi } from '../lib/tauri';
 import { toast } from '../stores/toast-store';
-import { truncatePath, formatRelativeTime, cn } from '../lib/utils';
+import { getErrorMessage, truncatePath, formatRelativeTime, cn } from '../lib/utils';
 
 interface Props {
   project: Project;
@@ -35,15 +35,12 @@ export function ProjectCard({ project, onOpen, onRemove }: Props) {
   const startProcess = useStartProcess();
   const stopProcess = useStopProcess();
 
-  // Check if any process in this project is active
   const projectProcesses = processes.filter((p) => p.project_id === project.id);
   const runningProcess = projectProcesses.find((p) => p.status === 'Running' || p.status === 'Starting');
   const isRunning = !!runningProcess;
 
-  // Preferred IDE
   const preferredIde = detectedIdes.find((i) => i.id === project.preferred_ide) || detectedIdes[0];
 
-  // Default run config
   const defaultConfig =
     runConfigs.find((c) => c.id === project.default_run_config_id || c.is_default) || runConfigs[0];
 
@@ -59,7 +56,7 @@ export function ProjectCard({ project, onOpen, onRemove }: Props) {
         { command: preferredIde.command, projectPath: project.path },
         {
           onSuccess: () => toast.success(`Opened in ${preferredIde.name}`),
-          onError: (err: any) => toast.error(err?.message || 'Failed to open in IDE'),
+          onError: (err: any) => toast.error(getErrorMessage(err) || 'Failed to open in IDE'),
         }
       );
     } else {
@@ -69,12 +66,12 @@ export function ProjectCard({ project, onOpen, onRemove }: Props) {
 
   const handleOpenFolder = (e: MouseEvent) => {
     e.stopPropagation();
-    tauriApi.openFolder(project.path).catch((e) => toast.error(e?.message || 'Failed to open folder'));
+    tauriApi.openFolder(project.path).catch((e) => toast.error(getErrorMessage(e) || 'Failed to open folder'));
   };
 
   const handleOpenTerminal = (e: MouseEvent) => {
     e.stopPropagation();
-    tauriApi.openTerminal(project.path).catch((e) => toast.error(e?.message || 'Failed to open terminal'));
+    tauriApi.openTerminal(project.path).catch((e) => toast.error(getErrorMessage(e) || 'Failed to open terminal'));
   };
 
   const handleToggleRun = async (e: MouseEvent) => {
@@ -83,8 +80,8 @@ export function ProjectCard({ project, onOpen, onRemove }: Props) {
       try {
         await stopProcess.mutateAsync(runningProcess.id);
         toast.info(`Stopped ${runningProcess.run_config_name}`);
-      } catch (err: any) {
-        toast.error(err?.message || 'Failed to stop process');
+      } catch (err) {
+        toast.error(getErrorMessage(err) || 'Failed to stop process');
       }
     } else if (defaultConfig) {
       if (!defaultConfig.is_trusted) {
@@ -94,8 +91,8 @@ export function ProjectCard({ project, onOpen, onRemove }: Props) {
       try {
         await startProcess.mutateAsync(defaultConfig.id);
         toast.success(`Started ${defaultConfig.name}`);
-      } catch (err: any) {
-        toast.error(err?.message || 'Failed to start process');
+      } catch (err) {
+        toast.error(getErrorMessage(err) || 'Failed to start process');
       }
     }
   };
@@ -112,7 +109,6 @@ export function ProjectCard({ project, onOpen, onRemove }: Props) {
       onClick={() => onOpen(project.id)}
       className="bg-zinc-900 border border-zinc-800 hover:border-zinc-700 rounded-xl p-4 cursor-pointer transition-all duration-150 group flex flex-col justify-between h-full shadow-sm hover:shadow-md relative"
     >
-      {/* Top Header */}
       <div>
         <div className="flex items-start justify-between gap-2 mb-2">
           <div className="flex items-center min-w-0 gap-2">
@@ -153,12 +149,10 @@ export function ProjectCard({ project, onOpen, onRemove }: Props) {
           </div>
         </div>
 
-        {/* Path */}
         <div className="text-[11px] text-zinc-400 truncate mb-3 font-mono">
           {truncatePath(project.path)}
         </div>
 
-        {/* Badges */}
         <div className="flex flex-wrap gap-1.5 mb-4">
           {project.project_type && (
             <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] bg-zinc-800 text-zinc-300 font-mono uppercase">
@@ -183,7 +177,6 @@ export function ProjectCard({ project, onOpen, onRemove }: Props) {
         </div>
       </div>
 
-      {/* Footer & Actions */}
       <div className="pt-3 border-t border-zinc-800/80 flex items-center justify-between text-xs">
         <span className="text-[11px] text-zinc-400">
           {formatRelativeTime(project.last_opened)}

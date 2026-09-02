@@ -25,6 +25,7 @@ import {
 import {
   useProcesses,
   useStartProcess,
+  useRunUntrustedOnce,
   useStopProcess,
   useRestartProcess,
 } from '../hooks/use-processes';
@@ -60,7 +61,7 @@ import {
   AlertTriangle,
   ArrowLeft,
 } from 'lucide-react';
-import { cn } from '../lib/utils';
+import { getErrorMessage, cn } from '../lib/utils';
 
 export const ProjectDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -90,10 +91,10 @@ export const ProjectDetailPage: React.FC = () => {
   const stopRunGroup = useStopRunGroup();
 
   const startProcess = useStartProcess();
+  const runUntrustedOnce = useRunUntrustedOnce();
   const stopProcess = useStopProcess();
   const restartProcess = useRestartProcess();
 
-  // Modals & Active Tab
   const [activeTab, setActiveTab] = useState<'overview' | 'runs' | 'git' | 'terminal' | 'logs'>('overview');
   const [untrustedConfig, setUntrustedConfig] = useState<RunConfiguration | null>(null);
   const [editingConfig, setEditingConfig] = useState<RunConfiguration | null | undefined>(undefined);
@@ -104,7 +105,6 @@ export const ProjectDetailPage: React.FC = () => {
   const [showRemoveConfirm, setShowRemoveConfirm] = useState(false);
   const [copiedPath, setCopiedPath] = useState(false);
 
-  // Close IDE dropdown when clicking outside
   useEffect(() => {
     const handleDocClick = () => setShowIdeDropdown(false);
     if (showIdeDropdown) {
@@ -122,15 +122,12 @@ export const ProjectDetailPage: React.FC = () => {
     );
   }
 
-  // Determine preferred IDE or fallback
   const preferredIde = detectedIdes.find((i) => i.id === project.preferred_ide) || detectedIdes[0];
 
-  // Running processes for this project
   const projectProcesses = processes.filter((p) => p.project_id === project.id);
   const activeProcesses = projectProcesses.filter((p) => p.status === 'Running' || p.status === 'Starting');
   const activeLogsProcessId = selectedProcessId || activeProcesses[0]?.id || projectProcesses[0]?.id;
 
-  // Default run config
   const defaultConfig =
     runConfigs.find((c) => c.id === project.default_run_config_id || c.is_default) || runConfigs[0];
   const isDefaultRunning = projectProcesses.some(
@@ -147,8 +144,8 @@ export const ProjectDetailPage: React.FC = () => {
       setSelectedProcessId(pid);
       setActiveTab('logs');
       toast.success(`Started '${config.name}'`);
-    } catch (e: any) {
-      toast.error(e?.message || 'Failed to start process');
+    } catch (e) {
+      toast.error(getErrorMessage(e) || 'Failed to start process');
     }
   };
 
@@ -158,8 +155,8 @@ export const ProjectDetailPage: React.FC = () => {
       try {
         await stopProcess.mutateAsync(running.id);
         toast.info(`Stopped process '${running.run_config_name}'`);
-      } catch (e: any) {
-        toast.error(e?.message || 'Failed to stop process');
+      } catch (e) {
+        toast.error(getErrorMessage(e) || 'Failed to stop process');
       }
     }
   };
@@ -174,7 +171,7 @@ export const ProjectDetailPage: React.FC = () => {
     };
     saveRunConfig.mutate(duplicated, {
       onSuccess: () => toast.success(`Duplicated configuration '${config.name}'`),
-      onError: (err: any) => toast.error(err?.message || 'Failed to duplicate configuration'),
+      onError: (err: any) => toast.error(getErrorMessage(err) || 'Failed to duplicate configuration'),
     });
   };
 
@@ -197,6 +194,7 @@ export const ProjectDetailPage: React.FC = () => {
           env_file: null,
           env_vars: {},
           is_trusted: false,
+          trusted_fingerprint: null,
           is_default: false,
           source: 'Detected',
           created_at: new Date().toISOString(),
@@ -205,8 +203,8 @@ export const ProjectDetailPage: React.FC = () => {
       }
       refetchRunConfigs();
       toast.success(`Detected and added ${detected.length} run configuration(s)`);
-    } catch (e: any) {
-      toast.error(`Auto-detect failed: ${e?.message || e}`);
+    } catch (e) {
+      toast.error(`Auto-detect failed: ${getErrorMessage(e) || e}`);
     }
   };
 
@@ -243,14 +241,13 @@ export const ProjectDetailPage: React.FC = () => {
       await removeProject.mutateAsync(project.id);
       toast.info(`Removed '${project.name}' from Runyard`);
       navigate('/projects');
-    } catch (e: any) {
-      toast.error(e?.message || 'Failed to remove project');
+    } catch (e) {
+      toast.error(getErrorMessage(e) || 'Failed to remove project');
     }
   };
 
   return (
     <div className="flex flex-col h-full overflow-y-auto p-6 space-y-6 max-w-6xl mx-auto">
-      {/* Top Header Card */}
       <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5 shadow-lg space-y-4">
         <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
           <div className="space-y-1.5 min-w-0">
@@ -301,9 +298,7 @@ export const ProjectDetailPage: React.FC = () => {
             </div>
           </div>
 
-          {/* Quick Actions Bar */}
           <div className="flex items-center gap-2 shrink-0 flex-wrap">
-            {/* Preferred IDE & Open With dropdown */}
             <div className="relative" onClick={(e) => e.stopPropagation()}>
               <div className="flex rounded-md shadow-sm">
                 <button
@@ -373,7 +368,6 @@ export const ProjectDetailPage: React.FC = () => {
               )}
             </div>
 
-            {/* Default Run Config quick trigger */}
             {defaultConfig && (
               <button
                 onClick={() => {
@@ -422,7 +416,6 @@ export const ProjectDetailPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Badges & Git overview line */}
         <div className="flex flex-wrap items-center gap-2 pt-3 border-t border-zinc-800/80 text-xs">
           {project.languages.map((l) => (
             <span
@@ -455,7 +448,6 @@ export const ProjectDetailPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Tabs Navigation */}
       <div className="flex border-b border-zinc-800 text-xs overflow-x-auto">
         <button
           onClick={() => setActiveTab('overview')}
@@ -515,10 +507,8 @@ export const ProjectDetailPage: React.FC = () => {
         )}
       </div>
 
-      {/* Tab Content: Overview & Services */}
       {activeTab === 'overview' && (
         <div className="space-y-6">
-          {/* Services breakdown table */}
           {services.length > 0 && (
             <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5 space-y-3">
               <div className="flex items-center justify-between">
@@ -591,7 +581,6 @@ export const ProjectDetailPage: React.FC = () => {
             </div>
           )}
 
-          {/* Tags management */}
           <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5 space-y-3">
             <h3 className="text-sm font-semibold text-zinc-200">Project Tags</h3>
             <div className="flex flex-wrap items-center gap-2">
@@ -630,10 +619,8 @@ export const ProjectDetailPage: React.FC = () => {
         </div>
       )}
 
-      {/* Tab Content: Run Configurations & Groups */}
       {activeTab === 'runs' && (
         <div className="space-y-6">
-          {/* Multi-Service Run Groups */}
           <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5 space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -679,7 +666,6 @@ export const ProjectDetailPage: React.FC = () => {
                           </span>
                         </div>
 
-                        {/* Partial status for each service member */}
                         <div className="flex flex-wrap gap-1.5">
                           {memberConfigs.map((cfg) => {
                             const proc = projectProcesses.find((p) => p.run_config_id === cfg.id);
@@ -764,7 +750,6 @@ export const ProjectDetailPage: React.FC = () => {
             )}
           </div>
 
-          {/* Individual Run Configurations */}
           <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5 space-y-3">
             <div className="flex items-center justify-between">
               <div>
@@ -926,13 +911,10 @@ export const ProjectDetailPage: React.FC = () => {
         </div>
       )}
 
-      {/* Tab Content: Git View */}
       {activeTab === 'git' && <GitView projectPath={project.path} />}
 
-      {/* Tab Content: Integrated Terminal */}
       {activeTab === 'terminal' && <TerminalView projectPath={project.path} />}
 
-      {/* Tab Content: Live Logs */}
       {activeTab === 'logs' && (
         <div className="space-y-4">
           <div className="flex items-center justify-between flex-wrap gap-2">
@@ -977,7 +959,6 @@ export const ProjectDetailPage: React.FC = () => {
         </div>
       )}
 
-      {/* Trust Dialog Modal */}
       {untrustedConfig && (
         <TrustDialog
           config={untrustedConfig}
@@ -986,12 +967,12 @@ export const ProjectDetailPage: React.FC = () => {
             const config = untrustedConfig;
             setUntrustedConfig(null);
             try {
-              const pid = await startProcess.mutateAsync(config.id);
+              const pid = await runUntrustedOnce.mutateAsync(config.id);
               setSelectedProcessId(pid);
               setActiveTab('logs');
               toast.success(`Started '${config.name}' (Run Once)`);
-            } catch (e: any) {
-              toast.error(e?.message || 'Failed to start process');
+            } catch (e) {
+              toast.error(getErrorMessage(e) || 'Failed to start process');
             }
           }}
           onTrustAndRun={async () => {
@@ -1003,14 +984,13 @@ export const ProjectDetailPage: React.FC = () => {
               setSelectedProcessId(pid);
               setActiveTab('logs');
               toast.success(`Trusted & Started '${config.name}'`);
-            } catch (e: any) {
-              toast.error(e?.message || 'Failed to trust and run process');
+            } catch (e) {
+              toast.error(getErrorMessage(e) || 'Failed to trust and run process');
             }
           }}
         />
       )}
 
-      {/* Run Config Modal */}
       {editingConfig !== undefined && (
         <RunConfigModal
           isOpen={true}
@@ -1018,7 +998,7 @@ export const ProjectDetailPage: React.FC = () => {
           onSave={(config) => {
             saveRunConfig.mutate(config, {
               onSuccess: () => toast.success(`Saved configuration '${config.name}'`),
-              onError: (err: any) => toast.error(err?.message || 'Failed to save configuration'),
+              onError: (err: any) => toast.error(getErrorMessage(err) || 'Failed to save configuration'),
             });
           }}
           projectId={project.id}
@@ -1028,7 +1008,6 @@ export const ProjectDetailPage: React.FC = () => {
         />
       )}
 
-      {/* Run Group Modal */}
       {editingGroup !== undefined && (
         <RunGroupModal
           isOpen={true}
@@ -1036,7 +1015,7 @@ export const ProjectDetailPage: React.FC = () => {
           onSave={(group) => {
             saveRunGroup.mutate(group, {
               onSuccess: () => toast.success(`Saved run group '${group.name}'`),
-              onError: (err: any) => toast.error(err?.message || 'Failed to save run group'),
+              onError: (err: any) => toast.error(getErrorMessage(err) || 'Failed to save run group'),
             });
           }}
           projectId={project.id}
@@ -1045,7 +1024,6 @@ export const ProjectDetailPage: React.FC = () => {
         />
       )}
 
-      {/* Safe Remove Project Confirmation Modal */}
       {showRemoveConfirm && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 animate-in fade-in duration-100"

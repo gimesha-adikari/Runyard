@@ -20,7 +20,7 @@ import {
   FolderPlus,
   RotateCw,
 } from 'lucide-react';
-import { formatElapsedDuration } from '../lib/utils';
+import { getErrorMessage, formatElapsedDuration } from '../lib/utils';
 
 export function OverviewPage() {
   const navigate = useNavigate();
@@ -56,14 +56,13 @@ export function OverviewPage() {
     try {
       await scanProjects.mutateAsync();
       toast.success('Projects scan completed');
-    } catch (e: any) {
-      toast.error(e?.message || 'Failed to scan projects');
+    } catch (e) {
+      toast.error(getErrorMessage(e) || 'Failed to scan projects');
     }
   };
 
   return (
     <div className="p-6 max-w-6xl mx-auto w-full space-y-6">
-      {/* Header & Quick Action Bar */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-xl font-bold text-zinc-100">Command Center</h1>
@@ -103,7 +102,6 @@ export function OverviewPage() {
         </div>
       </div>
 
-      {/* Needs Attention Section (if any failed processes) */}
       {attentionProjects.length > 0 && (
         <section className="bg-red-950/20 border border-red-900/40 rounded-xl p-4 space-y-3">
           <div className="flex items-center gap-2 text-red-400 text-xs font-semibold uppercase tracking-wider">
@@ -128,7 +126,6 @@ export function OverviewPage() {
         </section>
       )}
 
-      {/* Currently Running Services Section */}
       <section className="space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -173,7 +170,7 @@ export function OverviewPage() {
                         {formatElapsedDuration(proc.started_at)}
                       </div>
                     </div>
-                    <ProcessStatusBadge status={proc.status} />
+                    <ProcessStatusBadge status={proc.status} exitCode={proc.exit_code} />
                   </div>
 
                   <div className="flex items-center justify-end gap-2 pt-2 border-t border-zinc-800">
@@ -211,7 +208,6 @@ export function OverviewPage() {
         )}
       </section>
 
-      {/* Favorites Section */}
       <section className="space-y-3">
         <div className="flex items-center gap-2">
           <Star className="w-4 h-4 text-amber-400" />
@@ -232,7 +228,6 @@ export function OverviewPage() {
         )}
       </section>
 
-      {/* Recent Projects Section */}
       <section className="space-y-3">
         <div className="flex items-center gap-2">
           <Clock className="w-4 h-4 text-zinc-400" />
@@ -251,7 +246,6 @@ export function OverviewPage() {
         )}
       </section>
 
-      {/* Import Project Modal */}
       <ImportProjectDialog
         isOpen={showImportDialog}
         onClose={() => setShowImportDialog(false)}

@@ -1,23 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { filterPaletteItems } from './palette-filter.ts';
+import type { PaletteItemBase } from './palette-filter.ts';
 
-interface PaletteTestItem {
-  id: string;
-  category: string;
-  title: string;
-  subtitle?: string;
-}
-
-function filterPaletteItems(items: PaletteTestItem[], query: string): PaletteTestItem[] {
-  if (!query.trim()) return items;
-  const q = query.toLowerCase();
-  return items.filter(
-    (item) =>
-      item.title.toLowerCase().includes(q) ||
-      (item.subtitle && item.subtitle.toLowerCase().includes(q)) ||
-      item.category.toLowerCase().includes(q)
-  );
-}
+type PaletteTestItem = PaletteItemBase;
 
 test('filterPaletteItems matches title, subtitle, and category', () => {
   const items: PaletteTestItem[] = [

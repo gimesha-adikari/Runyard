@@ -17,7 +17,7 @@ import { useRunConfigs } from '../hooks/use-run-configs';
 import { useDetectedIdes, useOpenInIde } from '../hooks/use-ides';
 import { tauriApi } from '../lib/tauri';
 import { toast } from '../stores/toast-store';
-import { truncatePath, formatRelativeTime, cn } from '../lib/utils';
+import { getErrorMessage, truncatePath, formatRelativeTime, cn } from '../lib/utils';
 
 interface Props {
   project: Project;
@@ -54,7 +54,7 @@ export function ProjectListItem({ project, onOpen }: Props) {
         { command: preferredIde.command, projectPath: project.path },
         {
           onSuccess: () => toast.success(`Opened in ${preferredIde.name}`),
-          onError: (err: any) => toast.error(err?.message || 'Failed to open in IDE'),
+          onError: (err: any) => toast.error(getErrorMessage(err) || 'Failed to open in IDE'),
         }
       );
     }
@@ -62,12 +62,12 @@ export function ProjectListItem({ project, onOpen }: Props) {
 
   const handleOpenFolder = (e: MouseEvent) => {
     e.stopPropagation();
-    tauriApi.openFolder(project.path).catch((e) => toast.error(e?.message || 'Failed to open folder'));
+    tauriApi.openFolder(project.path).catch((e) => toast.error(getErrorMessage(e) || 'Failed to open folder'));
   };
 
   const handleOpenTerminal = (e: MouseEvent) => {
     e.stopPropagation();
-    tauriApi.openTerminal(project.path).catch((e) => toast.error(e?.message || 'Failed to open terminal'));
+    tauriApi.openTerminal(project.path).catch((e) => toast.error(getErrorMessage(e) || 'Failed to open terminal'));
   };
 
   const handleToggleRun = async (e: MouseEvent) => {
@@ -76,8 +76,8 @@ export function ProjectListItem({ project, onOpen }: Props) {
       try {
         await stopProcess.mutateAsync(runningProcess.id);
         toast.info(`Stopped ${runningProcess.run_config_name}`);
-      } catch (err: any) {
-        toast.error(err?.message || 'Failed to stop process');
+      } catch (err) {
+        toast.error(getErrorMessage(err) || 'Failed to stop process');
       }
     } else if (defaultConfig) {
       if (!defaultConfig.is_trusted) {
@@ -87,8 +87,8 @@ export function ProjectListItem({ project, onOpen }: Props) {
       try {
         await startProcess.mutateAsync(defaultConfig.id);
         toast.success(`Started ${defaultConfig.name}`);
-      } catch (err: any) {
-        toast.error(err?.message || 'Failed to start process');
+      } catch (err) {
+        toast.error(getErrorMessage(err) || 'Failed to start process');
       }
     }
   };

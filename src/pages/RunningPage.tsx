@@ -19,7 +19,7 @@ import {
   Folder,
   AlertCircle,
 } from 'lucide-react';
-import { formatElapsedDuration, cn } from '../lib/utils';
+import { getErrorMessage, formatElapsedDuration, cn } from '../lib/utils';
 import { ProcessInfo } from '../types';
 
 export function RunningPage() {
@@ -81,8 +81,8 @@ export function RunningPage() {
     try {
       await restartProcess.mutateAsync(proc.id);
       toast.info(`Restarting ${proc.run_config_name}`);
-    } catch (e: any) {
-      toast.error(e?.message || 'Failed to restart process');
+    } catch (e) {
+      toast.error(getErrorMessage(e) || 'Failed to restart process');
     }
   };
 
@@ -90,14 +90,13 @@ export function RunningPage() {
     try {
       await stopProcess.mutateAsync(proc.id);
       toast.info(`Stopped ${proc.run_config_name}`);
-    } catch (e: any) {
-      toast.error(e?.message || 'Failed to stop process');
+    } catch (e) {
+      toast.error(getErrorMessage(e) || 'Failed to stop process');
     }
   };
 
   return (
     <div className="p-6 max-w-6xl mx-auto w-full space-y-6">
-      {/* Page Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h1 className="text-xl font-bold text-zinc-100 flex items-center">
@@ -111,7 +110,6 @@ export function RunningPage() {
         </div>
 
         <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
-          {/* Filter Pills */}
           <div className="flex bg-zinc-900 rounded-lg border border-zinc-800 p-1 text-xs">
             <button
               onClick={() => setFilterMode('active')}
@@ -160,7 +158,6 @@ export function RunningPage() {
         </div>
       </div>
 
-      {/* Main Processes Area */}
       {processes.length === 0 ? (
         <div className="mt-16">
           <EmptyState
@@ -180,7 +177,6 @@ export function RunningPage() {
             const projectName = group.project?.name || 'Project';
             return (
               <div key={projectId} className="space-y-3">
-                {/* Project Group Header */}
                 <div className="flex items-center justify-between border-b border-zinc-800/80 pb-2">
                   <div className="flex items-center gap-2">
                     <Folder className="w-4 h-4 text-emerald-500" />
@@ -203,7 +199,6 @@ export function RunningPage() {
                   </span>
                 </div>
 
-                {/* Process Cards in Group */}
                 <div className="space-y-3">
                   {group.processes.map((proc) => {
                     const isRunning = proc.status === 'Running' || proc.status === 'Starting';
@@ -228,7 +223,7 @@ export function RunningPage() {
                               <span className="font-semibold text-zinc-100 text-sm truncate">
                                 {proc.run_config_name}
                               </span>
-                              <ProcessStatusBadge status={proc.status} />
+                              <ProcessStatusBadge status={proc.status} exitCode={proc.exit_code} />
 
                               {isFailed && (
                                 <span className="flex items-center gap-1 text-[10px] text-red-400 font-mono bg-red-950/80 px-1.5 py-0.2 rounded border border-red-800">
@@ -291,7 +286,6 @@ export function RunningPage() {
                           </div>
                         </div>
 
-                        {/* Expandable Log Viewer */}
                         {isExpanded && <LogViewer processId={proc.id} className="h-64 border-none rounded-none" />}
                       </div>
                     );

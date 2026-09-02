@@ -1,3 +1,4 @@
+import { getErrorMessage } from '../lib/utils';
 import React, { useEffect, useRef, useState } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
@@ -87,11 +88,12 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ projectPath, classNa
       terminalRef.current = term;
       fitAddonRef.current = fitAddon;
 
-      // Fit after DOM render
       requestAnimationFrame(() => {
         try {
           fitAddon.fit();
-        } catch {}
+        } catch {
+        // Ignore session already closed error
+        }
       });
 
       const cols = Math.max(20, term.cols || 80);
@@ -127,8 +129,8 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ projectPath, classNa
         unlistenData();
         unlistenExit();
       };
-    } catch (e: any) {
-      setError(e?.message || String(e));
+    } catch (e) {
+      setError(getErrorMessage(e) || String(e));
       setIsInitializing(false);
     }
   };
@@ -156,7 +158,9 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ projectPath, classNa
       if (fitAddonRef.current && terminalRef.current && containerRef.current) {
         try {
           fitAddonRef.current.fit();
-        } catch {}
+        } catch {
+        // Ignore session already closed error
+        }
       }
     };
 
@@ -181,7 +185,6 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ projectPath, classNa
 
   return (
     <div className={`flex flex-col h-[520px] bg-zinc-950 border border-zinc-800 rounded-xl overflow-hidden ${className || ''}`}>
-      {/* Top Header */}
       <div className="flex items-center justify-between px-4 py-2.5 bg-zinc-900 border-b border-zinc-800 text-xs text-zinc-400 shrink-0">
         <div className="flex items-center gap-2 min-w-0">
           <TermIcon className="w-4 h-4 text-emerald-400 shrink-0" />
@@ -208,7 +211,6 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ projectPath, classNa
         </div>
       </div>
 
-      {/* Terminal View Body */}
       {error ? (
         <div className="flex-1 flex flex-col items-center justify-center p-6 text-center text-zinc-400">
           <AlertCircle className="w-8 h-8 text-red-400 mb-2" />
