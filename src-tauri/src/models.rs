@@ -88,6 +88,13 @@ pub struct GitFileDiff {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GitInstalledInfo {
+    pub is_installed: bool,
+    pub path: Option<String>,
+    pub version: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DetectedIde {
     pub id: String,
     pub name: String,

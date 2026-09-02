@@ -1,8 +1,73 @@
 use crate::error::{Result, RunyardError};
-use crate::models::{GitBranchInfo, GitCommit, GitFileDiff, GitStatus};
+use crate::models::{GitBranchInfo, GitCommit, GitFileDiff, GitInstalledInfo, GitStatus};
 use std::process::Command;
 
+pub fn detect_git() -> GitInstalledInfo {
+    let which_out = Command::new("which").arg("git").output();
+    let path = match which_out {
+        Ok(out) if out.status.success() => {
+            let p = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            if p.is_empty() {
+                None
+            } else {
+                Some(p)
+            }
+        }
+        _ => None,
+    };
+
+    let ver_out = Command::new("git").arg("--version").output();
+    let (is_installed, version) = match ver_out {
+        Ok(out) if out.status.success() => {
+            let v = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            (true, Some(v))
+        }
+        _ => (false, None),
+    };
+
+    GitInstalledInfo {
+        is_installed,
+        path,
+        version,
+    }
+}
+
+pub fn ensure_git_repository(project_path: &str) -> Result<()> {
+    let path = std::path::Path::new(project_path);
+    if !path.exists() {
+        return Err(RunyardError::Validation(format!(
+            "Project path does not exist: {}",
+            project_path
+        )));
+    }
+
+    let output = Command::new("git")
+        .args(["rev-parse", "--is-inside-work-tree"])
+        .current_dir(project_path)
+        .output()
+        .map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                RunyardError::Git(
+                    "Git executable not found in system PATH. Please install Git.".to_string(),
+                )
+            } else {
+                RunyardError::Git(e.to_string())
+            }
+        })?;
+
+    if !output.status.success() {
+        return Err(RunyardError::Git(format!(
+            "'{}' is not a Git repository or worktree",
+            project_path
+        )));
+    }
+
+    Ok(())
+}
+
 pub fn get_git_status(project_path: &str) -> Result<GitStatus> {
+    ensure_git_repository(project_path)?;
+
     let branch_output = Command::new("git")
         .args(["branch", "--show-current"])
         .current_dir(project_path)
@@ -14,7 +79,21 @@ pub fn get_git_status(project_path: &str) -> Result<GitStatus> {
             .trim()
             .to_string();
         if b.is_empty() {
-            None
+            let head_output = Command::new("git")
+                .args(["rev-parse", "--short", "HEAD"])
+                .current_dir(project_path)
+                .output();
+            match head_output {
+                Ok(h) if h.status.success() => {
+                    let h_str = String::from_utf8_lossy(&h.stdout).trim().to_string();
+                    if h_str.is_empty() {
+                        None
+                    } else {
+                        Some(format!("HEAD (detached at {})", h_str))
+                    }
+                }
+                _ => None,
+            }
         } else {
             Some(b)
         }
@@ -133,6 +212,8 @@ pub fn get_git_status(project_path: &str) -> Result<GitStatus> {
 }
 
 pub fn get_git_branches(project_path: &str) -> Result<Vec<GitBranchInfo>> {
+    ensure_git_repository(project_path)?;
+
     let output = Command::new("git")
         .args(["branch", "-a", "--format=%(refname:short)|||%(HEAD)"])
         .current_dir(project_path)
@@ -164,6 +245,8 @@ pub fn get_git_branches(project_path: &str) -> Result<Vec<GitBranchInfo>> {
 }
 
 pub fn get_file_diff(project_path: &str, file_path: &str, staged: bool) -> Result<GitFileDiff> {
+    ensure_git_repository(project_path)?;
+
     let mut cmd = Command::new("git");
     cmd.current_dir(project_path);
     if staged {
@@ -187,6 +270,8 @@ pub fn get_file_diff(project_path: &str, file_path: &str, staged: bool) -> Resul
 }
 
 pub fn git_fetch(project_path: &str) -> Result<String> {
+    ensure_git_repository(project_path)?;
+
     let output = Command::new("git")
         .args(["fetch"])
         .current_dir(project_path)
@@ -202,6 +287,8 @@ pub fn git_fetch(project_path: &str) -> Result<String> {
 }
 
 pub fn git_pull(project_path: &str) -> Result<String> {
+    ensure_git_repository(project_path)?;
+
     let output = Command::new("git")
         .args(["pull", "--ff-only"])
         .current_dir(project_path)
@@ -244,6 +331,7 @@ fn validate_branch_name(branch_name: &str) -> Result<()> {
 }
 
 pub fn git_checkout_branch(project_path: &str, branch_name: &str) -> Result<()> {
+    ensure_git_repository(project_path)?;
     validate_branch_name(branch_name)?;
 
     let output = Command::new("git")
@@ -271,6 +359,7 @@ pub fn git_checkout_branch(project_path: &str, branch_name: &str) -> Result<()> 
 }
 
 pub fn git_create_branch(project_path: &str, branch_name: &str) -> Result<()> {
+    ensure_git_repository(project_path)?;
     validate_branch_name(branch_name)?;
 
     let output = Command::new("git")
@@ -295,4 +384,162 @@ pub fn git_create_branch(project_path: &str, branch_name: &str) -> Result<()> {
     }
 
     Ok(())
+}
+
+pub fn git_stage_file(project_path: &str, file_path: &str) -> Result<()> {
+    ensure_git_repository(project_path)?;
+
+    let output = Command::new("git")
+        .args(["add", "--", file_path])
+        .current_dir(project_path)
+        .output()
+        .map_err(|e| RunyardError::Git(format!("Failed to execute git add: {}", e)))?;
+
+    if !output.status.success() {
+        let err = String::from_utf8_lossy(&output.stderr);
+        return Err(RunyardError::Git(format!(
+            "Git stage failed: {}",
+            err.trim()
+        )));
+    }
+
+    Ok(())
+}
+
+pub fn git_stage_all(project_path: &str) -> Result<()> {
+    ensure_git_repository(project_path)?;
+
+    let output = Command::new("git")
+        .args(["add", "-A"])
+        .current_dir(project_path)
+        .output()
+        .map_err(|e| RunyardError::Git(format!("Failed to execute git add -A: {}", e)))?;
+
+    if !output.status.success() {
+        let err = String::from_utf8_lossy(&output.stderr);
+        return Err(RunyardError::Git(format!(
+            "Git stage all failed: {}",
+            err.trim()
+        )));
+    }
+
+    Ok(())
+}
+
+pub fn git_unstage_file(project_path: &str, file_path: &str) -> Result<()> {
+    ensure_git_repository(project_path)?;
+
+    let head_exists = Command::new("git")
+        .args(["rev-parse", "--verify", "HEAD"])
+        .current_dir(project_path)
+        .output()
+        .map(|out| out.status.success())
+        .unwrap_or(false);
+
+    let output = if head_exists {
+        Command::new("git")
+            .args(["restore", "--staged", "--", file_path])
+            .current_dir(project_path)
+            .output()
+    } else {
+        Command::new("git")
+            .args(["rm", "--cached", "-r", "--", file_path])
+            .current_dir(project_path)
+            .output()
+    }
+    .map_err(|e| RunyardError::Git(format!("Failed to execute git unstage: {}", e)))?;
+
+    if !output.status.success() {
+        let err = String::from_utf8_lossy(&output.stderr);
+        return Err(RunyardError::Git(format!(
+            "Git unstage failed: {}",
+            err.trim()
+        )));
+    }
+
+    Ok(())
+}
+
+pub fn git_commit(project_path: &str, message: &str) -> Result<String> {
+    ensure_git_repository(project_path)?;
+
+    let trimmed = message.trim();
+    if trimmed.is_empty() {
+        return Err(RunyardError::Validation(
+            "Commit message cannot be empty".to_string(),
+        ));
+    }
+
+    let output = Command::new("git")
+        .args(["commit", "-m", trimmed])
+        .current_dir(project_path)
+        .output()
+        .map_err(|e| RunyardError::Git(format!("Failed to execute git commit: {}", e)))?;
+
+    if !output.status.success() {
+        let err = String::from_utf8_lossy(&output.stderr);
+        let out = String::from_utf8_lossy(&output.stdout);
+        let combined = if err.trim().is_empty() { out } else { err };
+        return Err(RunyardError::Git(format!(
+            "Git commit failed: {}",
+            combined.trim()
+        )));
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+pub fn git_push(project_path: &str) -> Result<String> {
+    ensure_git_repository(project_path)?;
+
+    let output = Command::new("git")
+        .args(["push"])
+        .current_dir(project_path)
+        .output()
+        .map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                RunyardError::Git(
+                    "Git executable not found in system PATH. Please install Git.".to_string(),
+                )
+            } else {
+                RunyardError::Git(format!("Failed to execute git push: {}", e))
+            }
+        })?;
+
+    if !output.status.success() {
+        let err = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let out = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let combined = if err.is_empty() { out } else { err };
+
+        if combined.contains("Permission denied")
+            || combined.contains("Authentication failed")
+            || combined.contains("Could not read from remote repository")
+        {
+            return Err(RunyardError::Git(format!(
+                "Git push authentication failed: {}",
+                combined
+            )));
+        } else if combined.contains("no upstream branch")
+            || combined.contains("has no upstream branch")
+        {
+            return Err(RunyardError::Git(format!(
+                "No upstream configured for branch. Please push with upstream set: {}",
+                combined
+            )));
+        }
+
+        return Err(RunyardError::Git(format!("Git push failed: {}", combined)));
+    }
+
+    let out = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if out.is_empty() {
+        let err = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        if err.is_empty() {
+            Ok("Push successful".to_string())
+        } else {
+            Ok(err)
+        }
+    } else {
+        Ok(out)
+    }
 }

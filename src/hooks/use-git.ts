@@ -72,3 +72,66 @@ export function useGitCreateBranch() {
     },
   });
 }
+
+export function useDetectGit() {
+  return useQuery({
+    queryKey: ['git', 'installed'],
+    queryFn: () => tauriApi.detectGit(),
+    staleTime: 60000,
+  });
+}
+
+export function useGitStageFile() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ projectPath, filePath }: { projectPath: string; filePath: string }) =>
+      tauriApi.gitStageFile(projectPath, filePath),
+    onSuccess: (_, { projectPath }) => {
+      queryClient.invalidateQueries({ queryKey: ['git', 'status', projectPath] });
+    },
+  });
+}
+
+export function useGitStageAll() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (projectPath: string) => tauriApi.gitStageAll(projectPath),
+    onSuccess: (_, projectPath) => {
+      queryClient.invalidateQueries({ queryKey: ['git', 'status', projectPath] });
+    },
+  });
+}
+
+export function useGitUnstageFile() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ projectPath, filePath }: { projectPath: string; filePath: string }) =>
+      tauriApi.gitUnstageFile(projectPath, filePath),
+    onSuccess: (_, { projectPath }) => {
+      queryClient.invalidateQueries({ queryKey: ['git', 'status', projectPath] });
+    },
+  });
+}
+
+export function useGitCommit() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ projectPath, message }: { projectPath: string; message: string }) =>
+      tauriApi.gitCommit(projectPath, message),
+    onSuccess: (_, { projectPath }) => {
+      queryClient.invalidateQueries({ queryKey: ['git', 'status', projectPath] });
+      queryClient.invalidateQueries({ queryKey: ['git', 'branches', projectPath] });
+    },
+  });
+}
+
+export function useGitPush() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (projectPath: string) => tauriApi.gitPush(projectPath),
+    onSuccess: (_, projectPath) => {
+      queryClient.invalidateQueries({ queryKey: ['git', 'status', projectPath] });
+      queryClient.invalidateQueries({ queryKey: ['git', 'branches', projectPath] });
+    },
+  });
+}

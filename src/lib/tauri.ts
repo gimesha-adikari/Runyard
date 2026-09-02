@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import type {
-  Project, ScanRoot, GitStatus, GitBranchInfo, GitFileDiff, DetectedIde, RunConfiguration,
+  Project, ScanRoot, GitStatus, GitBranchInfo, GitFileDiff, GitInstalledInfo, DetectedIde, RunConfiguration,
   ProcessInfo, OutputLine, AppSettings, Service, RunGroup, DetectedRunConfig, ProjectInspection
 } from '../types';
 
@@ -30,6 +30,12 @@ export const tauriApi = {
   gitPull: (projectPath: string) => invoke<string>('git_pull', { projectPath: projectPath }),
   gitCheckoutBranch: (projectPath: string, branchName: string) => invoke<void>('git_checkout_branch', { projectPath: projectPath, branchName: branchName }),
   gitCreateBranch: (projectPath: string, branchName: string) => invoke<void>('git_create_branch', { projectPath: projectPath, branchName: branchName }),
+  detectGit: () => invoke<GitInstalledInfo>('detect_git'),
+  gitStageFile: (projectPath: string, filePath: string) => invoke<void>('git_stage_file', { projectPath, filePath }),
+  gitStageAll: (projectPath: string) => invoke<void>('git_stage_all', { projectPath }),
+  gitUnstageFile: (projectPath: string, filePath: string) => invoke<void>('git_unstage_file', { projectPath, filePath }),
+  gitCommit: (projectPath: string, message: string) => invoke<string>('git_commit', { projectPath, message }),
+  gitPush: (projectPath: string) => invoke<string>('git_push', { projectPath }),
 
   detectIdes: () => invoke<DetectedIde[]>('detect_ides'),
   openInIde: (command: string, projectPath: string) => invoke<void>('open_in_ide', { command, projectPath: projectPath }),

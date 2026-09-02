@@ -70,6 +70,12 @@ export interface GitFileDiff {
   is_staged: boolean;
 }
 
+export interface GitInstalledInfo {
+  is_installed: boolean;
+  path: string | null;
+  version: string | null;
+}
+
 export interface DetectedIde {
   id: string;
   name: string;

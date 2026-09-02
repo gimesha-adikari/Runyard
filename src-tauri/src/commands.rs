@@ -403,6 +403,36 @@ pub fn git_create_branch(project_path: String, branch_name: String) -> Result<()
     crate::git::git_create_branch(&project_path, &branch_name)
 }
 
+#[tauri::command]
+pub fn detect_git() -> crate::models::GitInstalledInfo {
+    crate::git::detect_git()
+}
+
+#[tauri::command]
+pub fn git_stage_file(project_path: String, file_path: String) -> Result<()> {
+    crate::git::git_stage_file(&project_path, &file_path)
+}
+
+#[tauri::command]
+pub fn git_stage_all(project_path: String) -> Result<()> {
+    crate::git::git_stage_all(&project_path)
+}
+
+#[tauri::command]
+pub fn git_unstage_file(project_path: String, file_path: String) -> Result<()> {
+    crate::git::git_unstage_file(&project_path, &file_path)
+}
+
+#[tauri::command]
+pub fn git_commit(project_path: String, message: String) -> Result<String> {
+    crate::git::git_commit(&project_path, &message)
+}
+
+#[tauri::command]
+pub fn git_push(project_path: String) -> Result<String> {
+    crate::git::git_push(&project_path)
+}
+
 // IDE
 
 #[tauri::command]
