@@ -100,9 +100,53 @@ pub struct RunConfiguration {
     pub env_vars: HashMap<String, String>,
     pub is_trusted: bool,
     #[serde(default)]
+    pub trusted_fingerprint: Option<String>,
+    #[serde(default)]
     pub is_default: bool,
     pub source: RunConfigSource,
     pub created_at: String,
+}
+
+impl RunConfiguration {
+    pub fn compute_fingerprint(&self) -> String {
+        use sha2::{Digest, Sha256};
+        let mut hasher = Sha256::new();
+        hasher.update(self.command.trim().as_bytes());
+        hasher.update(b"\0");
+        for arg in &self.args {
+            hasher.update(arg.as_bytes());
+            hasher.update(b"\0");
+        }
+        if let Some(ref wd) = self.working_dir {
+            hasher.update(wd.trim().as_bytes());
+        }
+        hasher.update(b"\0");
+        if let Some(ref ef) = self.env_file {
+            hasher.update(ef.trim().as_bytes());
+        }
+        hasher.update(b"\0");
+        let mut sorted_keys: Vec<&String> = self.env_vars.keys().collect();
+        sorted_keys.sort();
+        for k in sorted_keys {
+            hasher.update(k.as_bytes());
+            hasher.update(b"=");
+            if let Some(val) = self.env_vars.get(k) {
+                hasher.update(val.as_bytes());
+            }
+            hasher.update(b"\0");
+        }
+        format!("{:x}", hasher.finalize())
+    }
+
+    pub fn is_trust_valid(&self) -> bool {
+        if !self.is_trusted {
+            return false;
+        }
+        match &self.trusted_fingerprint {
+            Some(expected) => expected == &self.compute_fingerprint(),
+            None => false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

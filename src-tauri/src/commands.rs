@@ -1,7 +1,7 @@
 use crate::error::{Result, RunyardError};
 use crate::models::{
     AppSettings, DetectedIde, DetectedRunConfig, GitBranchInfo, GitFileDiff, GitStatus,
-    ProcessInfo, Project, ProjectInspection, RunConfiguration, RunConfigSource, RunGroup, ScanRoot,
+    ProcessInfo, Project, ProjectInspection, RunConfigSource, RunConfiguration, RunGroup, ScanRoot,
     Service,
 };
 use crate::{ProcessManagerState, PtyManagerState};
@@ -91,9 +91,14 @@ pub fn inspect_project_path(path: String) -> Result<ProjectInspection> {
         git_branch: git_status.as_ref().and_then(|g| g.branch.clone()),
         git_remote: git_status.as_ref().and_then(|g| g.remote_url.clone()),
         preferred_ide: existing.as_ref().and_then(|e| e.preferred_ide.clone()),
-        default_run_config_id: existing.as_ref().and_then(|e| e.default_run_config_id.clone()),
+        default_run_config_id: existing
+            .as_ref()
+            .and_then(|e| e.default_run_config_id.clone()),
         is_favorite: existing.as_ref().map(|e| e.is_favorite).unwrap_or(false),
-        tags: existing.as_ref().map(|e| e.tags.clone()).unwrap_or_default(),
+        tags: existing
+            .as_ref()
+            .map(|e| e.tags.clone())
+            .unwrap_or_default(),
         last_opened: existing.as_ref().and_then(|e| e.last_opened.clone()),
         last_run: existing.as_ref().and_then(|e| e.last_run.clone()),
         created_at: existing
@@ -132,6 +137,7 @@ pub fn import_project(path: String) -> Result<Project> {
             env_file: None,
             env_vars: HashMap::new(),
             is_trusted: false,
+            trusted_fingerprint: None,
             is_default: false,
             source: RunConfigSource::Detected,
             created_at: chrono::Utc::now().to_rfc3339(),
@@ -186,9 +192,14 @@ pub fn scan_projects() -> Result<Vec<Project>> {
                         git_branch: git_status.as_ref().and_then(|g| g.branch.clone()),
                         git_remote: git_status.as_ref().and_then(|g| g.remote_url.clone()),
                         preferred_ide: existing.as_ref().and_then(|e| e.preferred_ide.clone()),
-                        default_run_config_id: existing.as_ref().and_then(|e| e.default_run_config_id.clone()),
+                        default_run_config_id: existing
+                            .as_ref()
+                            .and_then(|e| e.default_run_config_id.clone()),
                         is_favorite: existing.as_ref().map(|e| e.is_favorite).unwrap_or(false),
-                        tags: existing.as_ref().map(|e| e.tags.clone()).unwrap_or_default(),
+                        tags: existing
+                            .as_ref()
+                            .map(|e| e.tags.clone())
+                            .unwrap_or_default(),
                         last_opened: existing.as_ref().and_then(|e| e.last_opened.clone()),
                         last_run: existing.as_ref().and_then(|e| e.last_run.clone()),
                         created_at: existing
@@ -228,6 +239,7 @@ pub fn scan_projects() -> Result<Vec<Project>> {
                             env_file: None,
                             env_vars: HashMap::new(),
                             is_trusted: false,
+                            trusted_fingerprint: None,
                             is_default: false,
                             source: RunConfigSource::Detected,
                             created_at: chrono::Utc::now().to_rfc3339(),
@@ -422,6 +434,7 @@ pub fn delete_run_config(id: String) -> Result<()> {
 pub fn trust_run_config(id: String) -> Result<()> {
     let mut config = crate::db::get_run_config(&id)?;
     config.is_trusted = true;
+    config.trusted_fingerprint = Some(config.compute_fingerprint());
     crate::db::save_run_config(&config)
 }
 
@@ -467,9 +480,9 @@ pub async fn start_run_group(
         let mut res = Vec::new();
         for cid in config_ids {
             let config = crate::db::get_run_config(&cid)?;
-            if !config.is_trusted {
+            if !config.is_trust_valid() {
                 return Err(RunyardError::Validation(format!(
-                    "Run configuration '{}' in group is not trusted. Approve it first.",
+                    "Run configuration '{}' in group is not trusted or its execution semantics changed. Please re-approve before running.",
                     config.name
                 )));
             }
@@ -494,10 +507,7 @@ pub async fn start_run_group(
 }
 
 #[tauri::command]
-pub async fn stop_run_group(
-    group_id: String,
-    state: State<'_, ProcessManagerState>,
-) -> Result<()> {
+pub async fn stop_run_group(group_id: String, state: State<'_, ProcessManagerState>) -> Result<()> {
     let config_ids: Vec<String> = {
         let conn = crate::db::get_connection()?;
         let mut stmt = conn.prepare(
@@ -513,7 +523,9 @@ pub async fn stop_run_group(
     let pm = state.lock().await;
     let procs = pm.get_all_processes().await;
     for p in procs {
-        if config_ids.contains(&p.run_config_id) && p.status == crate::models::ProcessStatus::Running {
+        if config_ids.contains(&p.run_config_id)
+            && p.status == crate::models::ProcessStatus::Running
+        {
             let _ = pm.stop_process(&p.id).await;
         }
     }
@@ -530,9 +542,9 @@ pub async fn start_process(
 ) -> Result<String> {
     let config = crate::db::get_run_config(&run_config_id)?;
 
-    if !config.is_trusted {
+    if !config.is_trust_valid() {
         return Err(RunyardError::Validation(
-            "Run configuration is not trusted. Approve it before running.".to_string(),
+            "Run configuration is not trusted or its execution semantics changed. Please re-approve before running.".to_string(),
         ));
     }
 
@@ -544,10 +556,20 @@ pub async fn start_process(
 }
 
 #[tauri::command]
-pub async fn stop_process(
-    process_id: String,
+pub async fn run_untrusted_once(
+    run_config_id: String,
     state: State<'_, ProcessManagerState>,
-) -> Result<()> {
+) -> Result<String> {
+    let config = crate::db::get_run_config(&run_config_id)?;
+    let project_id = config.project_id.clone();
+    crate::db::update_last_run(&project_id)?;
+
+    let pm = state.lock().await;
+    pm.start_process(&project_id, config).await
+}
+
+#[tauri::command]
+pub async fn stop_process(process_id: String, state: State<'_, ProcessManagerState>) -> Result<()> {
     let pm = state.lock().await;
     pm.stop_process(&process_id).await
 }
@@ -557,17 +579,28 @@ pub async fn restart_process(
     process_id: String,
     state: State<'_, ProcessManagerState>,
 ) -> Result<()> {
+    let (config, project_id) = {
+        let pm = state.lock().await;
+        let procs = pm.get_all_processes().await;
+        let proc_info = procs
+            .iter()
+            .find(|p| p.id == process_id)
+            .ok_or_else(|| RunyardError::NotFound(format!("Process {} not found", process_id)))?;
+        let config = crate::db::get_run_config(&proc_info.run_config_id)?;
+        let project_id = proc_info.project_id.clone();
+        (config, project_id)
+    };
+
+    if !config.is_trust_valid() {
+        return Err(RunyardError::Validation(
+            "Run configuration is not trusted or its execution semantics changed. Please re-approve before running.".to_string(),
+        ));
+    }
+
     let pm = state.lock().await;
     pm.stop_process(&process_id).await?;
-    let info = pm.get_all_processes().await;
-    drop(pm);
-
-    if let Some(proc_info) = info.iter().find(|p| p.id == process_id) {
-        let config = crate::db::get_run_config(&proc_info.run_config_id)?;
-        let project_id = config.project_id.clone();
-        let pm = state.lock().await;
-        pm.start_process(&project_id, config).await?;
-    }
+    let _ = crate::db::update_last_run(&project_id);
+    pm.start_process(&project_id, config).await?;
     Ok(())
 }
 

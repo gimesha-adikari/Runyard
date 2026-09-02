@@ -17,9 +17,21 @@ pub fn get_connection() -> Result<Connection> {
     Connection::open(&*DB_PATH).map_err(Into::into)
 }
 
+pub fn get_connection_for_path<P: AsRef<std::path::Path>>(path: P) -> Result<Connection> {
+    Connection::open(path).map_err(Into::into)
+}
+
 pub fn initialize() -> Result<()> {
     let mut conn = get_connection()?;
+    migrate(&mut conn)
+}
 
+pub fn initialize_at_path<P: AsRef<std::path::Path>>(path: P) -> Result<()> {
+    let mut conn = get_connection_for_path(path)?;
+    migrate(&mut conn)
+}
+
+pub fn migrate(conn: &mut Connection) -> Result<()> {
     conn.execute(
         "CREATE TABLE IF NOT EXISTS schema_version (
             version INTEGER PRIMARY KEY
@@ -82,6 +94,7 @@ pub fn initialize() -> Result<()> {
                 env_file TEXT,
                 env_vars TEXT DEFAULT '{}',
                 is_trusted BOOLEAN NOT NULL DEFAULT 0,
+                trusted_fingerprint TEXT,
                 is_default BOOLEAN NOT NULL DEFAULT 0,
                 source TEXT NOT NULL,
                 created_at TEXT NOT NULL,
@@ -100,7 +113,6 @@ pub fn initialize() -> Result<()> {
     }
 
     if current_version < 2 {
-        // Upgrade projects table if default_run_config_id missing
         let mut pragma_stmt = tx.prepare("PRAGMA table_info(projects)")?;
         let columns: Vec<String> = pragma_stmt
             .query_map([], |row| row.get(1))?
@@ -109,10 +121,12 @@ pub fn initialize() -> Result<()> {
         drop(pragma_stmt);
 
         if !columns.contains(&"default_run_config_id".to_string()) {
-            tx.execute("ALTER TABLE projects ADD COLUMN default_run_config_id TEXT", [])?;
+            tx.execute(
+                "ALTER TABLE projects ADD COLUMN default_run_config_id TEXT",
+                [],
+            )?;
         }
 
-        // Upgrade run_configurations table if columns missing
         let mut pragma_rc = tx.prepare("PRAGMA table_info(run_configurations)")?;
         let rc_columns: Vec<String> = pragma_rc
             .query_map([], |row| row.get(1))?
@@ -121,16 +135,24 @@ pub fn initialize() -> Result<()> {
         drop(pragma_rc);
 
         if !rc_columns.contains(&"service_id".to_string()) {
-            tx.execute("ALTER TABLE run_configurations ADD COLUMN service_id TEXT", [])?;
+            tx.execute(
+                "ALTER TABLE run_configurations ADD COLUMN service_id TEXT",
+                [],
+            )?;
         }
         if !rc_columns.contains(&"env_vars".to_string()) {
-            tx.execute("ALTER TABLE run_configurations ADD COLUMN env_vars TEXT DEFAULT '{}'", [])?;
+            tx.execute(
+                "ALTER TABLE run_configurations ADD COLUMN env_vars TEXT DEFAULT '{}'",
+                [],
+            )?;
         }
         if !rc_columns.contains(&"is_default".to_string()) {
-            tx.execute("ALTER TABLE run_configurations ADD COLUMN is_default BOOLEAN NOT NULL DEFAULT 0", [])?;
+            tx.execute(
+                "ALTER TABLE run_configurations ADD COLUMN is_default BOOLEAN NOT NULL DEFAULT 0",
+                [],
+            )?;
         }
 
-        // Create services table
         tx.execute(
             "CREATE TABLE IF NOT EXISTS services (
                 id TEXT PRIMARY KEY,
@@ -146,7 +168,6 @@ pub fn initialize() -> Result<()> {
             [],
         )?;
 
-        // Create run_groups table
         tx.execute(
             "CREATE TABLE IF NOT EXISTS run_groups (
                 id TEXT PRIMARY KEY,
@@ -158,7 +179,6 @@ pub fn initialize() -> Result<()> {
             [],
         )?;
 
-        // Create run_group_members table
         tx.execute(
             "CREATE TABLE IF NOT EXISTS run_group_members (
                 id TEXT PRIMARY KEY,
@@ -172,8 +192,78 @@ pub fn initialize() -> Result<()> {
         )?;
     }
 
+    if current_version < 3 {
+        let mut pragma_rc = tx.prepare("PRAGMA table_info(run_configurations)")?;
+        let rc_columns: Vec<String> = pragma_rc
+            .query_map([], |row| row.get(1))?
+            .filter_map(|r| r.ok())
+            .collect();
+        drop(pragma_rc);
+
+        if !rc_columns.contains(&"trusted_fingerprint".to_string()) {
+            tx.execute(
+                "ALTER TABLE run_configurations ADD COLUMN trusted_fingerprint TEXT",
+                [],
+            )?;
+        }
+
+        // Migrate existing trusted run configurations by computing their valid fingerprint
+        let mut select_stmt = tx.prepare(
+            "SELECT id, command, args, working_dir, env_file, env_vars FROM run_configurations WHERE is_trusted = 1 AND (trusted_fingerprint IS NULL OR trusted_fingerprint = '')"
+        )?;
+        let rows: Vec<(
+            String,
+            String,
+            String,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+        )> = select_stmt
+            .query_map([], |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                    row.get(5)?,
+                ))
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+        drop(select_stmt);
+
+        for (id, command, args_str, working_dir, env_file, env_vars_str) in rows {
+            let args: Vec<String> = serde_json::from_str(&args_str).unwrap_or_default();
+            let env_vars: HashMap<String, String> = env_vars_str
+                .and_then(|s| serde_json::from_str(&s).ok())
+                .unwrap_or_default();
+            let mock_config = RunConfiguration {
+                id: id.clone(),
+                project_id: String::new(),
+                service_id: None,
+                name: String::new(),
+                command,
+                args,
+                working_dir,
+                env_file,
+                env_vars,
+                is_trusted: true,
+                trusted_fingerprint: None,
+                is_default: false,
+                source: crate::models::RunConfigSource::UserCreated,
+                created_at: String::new(),
+            };
+            let fp = mock_config.compute_fingerprint();
+            tx.execute(
+                "UPDATE run_configurations SET trusted_fingerprint = ? WHERE id = ?",
+                [&fp, &id],
+            )?;
+        }
+    }
+
     tx.execute(
-        "INSERT INTO schema_version (version) VALUES (2) ON CONFLICT(version) DO UPDATE SET version = 2",
+        "INSERT INTO schema_version (version) VALUES (3) ON CONFLICT(version) DO UPDATE SET version = 3",
         [],
     )?;
 
@@ -187,7 +277,7 @@ pub fn get_all_projects() -> Result<Vec<Project>> {
     let mut stmt = conn.prepare(
         "SELECT id, name, path, project_type, languages, frameworks, has_git, git_branch, git_remote, preferred_ide, default_run_config_id, is_favorite, tags, last_opened, last_run, created_at FROM projects"
     )?;
-    
+
     let projects = stmt.query_map([], |row| {
         Ok(Project {
             id: row.get(0)?,
@@ -221,7 +311,7 @@ pub fn get_project(id: &str) -> Result<Project> {
     let mut stmt = conn.prepare(
         "SELECT id, name, path, project_type, languages, frameworks, has_git, git_branch, git_remote, preferred_ide, default_run_config_id, is_favorite, tags, last_opened, last_run, created_at FROM projects WHERE id = ?"
     )?;
-    
+
     let p = stmt.query_row([id], |row| {
         Ok(Project {
             id: row.get(0)?,
@@ -242,7 +332,7 @@ pub fn get_project(id: &str) -> Result<Project> {
             created_at: row.get(15)?,
         })
     });
-    
+
     p.map_err(|_| RunyardError::NotFound(format!("Project {} not found", id)))
 }
 
@@ -251,7 +341,7 @@ pub fn get_project_by_path(path: &str) -> Result<Option<Project>> {
     let mut stmt = conn.prepare(
         "SELECT id, name, path, project_type, languages, frameworks, has_git, git_branch, git_remote, preferred_ide, default_run_config_id, is_favorite, tags, last_opened, last_run, created_at FROM projects WHERE path = ?"
     )?;
-    
+
     let mut rows = stmt.query([path])?;
     if let Some(row) = rows.next()? {
         Ok(Some(Project {
@@ -317,7 +407,7 @@ pub fn get_services(project_id: &str) -> Result<Vec<Service>> {
     let mut stmt = conn.prepare(
         "SELECT id, project_id, name, path, service_type, languages, frameworks, created_at FROM services WHERE project_id = ?"
     )?;
-    
+
     let services = stmt.query_map([project_id], |row| {
         Ok(Service {
             id: row.get(0)?,
@@ -368,7 +458,7 @@ pub fn delete_service(id: &str) -> Result<()> {
 pub fn get_scan_roots() -> Result<Vec<ScanRoot>> {
     let conn = get_connection()?;
     let mut stmt = conn.prepare("SELECT id, path, enabled, created_at FROM scan_roots")?;
-    
+
     let roots = stmt.query_map([], |row| {
         Ok(ScanRoot {
             id: row.get(0)?,
@@ -403,14 +493,17 @@ pub fn remove_scan_root(id: &str) -> Result<()> {
 pub fn get_run_configs(project_id: &str) -> Result<Vec<RunConfiguration>> {
     let conn = get_connection()?;
     let mut stmt = conn.prepare(
-        "SELECT id, project_id, service_id, name, command, args, working_dir, env_file, env_vars, is_trusted, is_default, source, created_at FROM run_configurations WHERE project_id = ?"
+        "SELECT id, project_id, service_id, name, command, args, working_dir, env_file, env_vars, is_trusted, is_default, source, created_at, trusted_fingerprint FROM run_configurations WHERE project_id = ?"
     )?;
-    
+
     let configs = stmt.query_map([project_id], |row| {
         let env_vars_str: Option<String> = row.get(8)?;
         let env_vars: HashMap<String, String> = env_vars_str
             .and_then(|s| serde_json::from_str(&s).ok())
             .unwrap_or_default();
+
+        let is_trusted_val: bool = row.get(9)?;
+        let trusted_fp: Option<String> = row.get(13)?;
 
         Ok(RunConfiguration {
             id: row.get(0)?,
@@ -422,9 +515,11 @@ pub fn get_run_configs(project_id: &str) -> Result<Vec<RunConfiguration>> {
             working_dir: row.get(6)?,
             env_file: row.get(7)?,
             env_vars,
-            is_trusted: row.get(9)?,
+            is_trusted: is_trusted_val,
+            trusted_fingerprint: trusted_fp,
             is_default: row.get(10)?,
-            source: serde_json::from_str(&format!("\"{}\"", row.get::<_, String>(11)?)).unwrap_or(crate::models::RunConfigSource::UserCreated),
+            source: serde_json::from_str(&format!("\"{}\"", row.get::<_, String>(11)?))
+                .unwrap_or(crate::models::RunConfigSource::UserCreated),
             created_at: row.get(12)?,
         })
     })?;
@@ -439,31 +534,38 @@ pub fn get_run_configs(project_id: &str) -> Result<Vec<RunConfiguration>> {
 pub fn get_run_config(id: &str) -> Result<RunConfiguration> {
     let conn = get_connection()?;
     let mut stmt = conn.prepare(
-        "SELECT id, project_id, service_id, name, command, args, working_dir, env_file, env_vars, is_trusted, is_default, source, created_at FROM run_configurations WHERE id = ?"
+        "SELECT id, project_id, service_id, name, command, args, working_dir, env_file, env_vars, is_trusted, is_default, source, created_at, trusted_fingerprint FROM run_configurations WHERE id = ?"
     )?;
-    
-    let config = stmt.query_row([id], |row| {
-        let env_vars_str: Option<String> = row.get(8)?;
-        let env_vars: HashMap<String, String> = env_vars_str
-            .and_then(|s| serde_json::from_str(&s).ok())
-            .unwrap_or_default();
 
-        Ok(RunConfiguration {
-            id: row.get(0)?,
-            project_id: row.get(1)?,
-            service_id: row.get(2)?,
-            name: row.get(3)?,
-            command: row.get(4)?,
-            args: serde_json::from_str(&row.get::<_, String>(5)?).unwrap_or_default(),
-            working_dir: row.get(6)?,
-            env_file: row.get(7)?,
-            env_vars,
-            is_trusted: row.get(9)?,
-            is_default: row.get(10)?,
-            source: serde_json::from_str(&format!("\"{}\"", row.get::<_, String>(11)?)).unwrap_or(crate::models::RunConfigSource::UserCreated),
-            created_at: row.get(12)?,
+    let config = stmt
+        .query_row([id], |row| {
+            let env_vars_str: Option<String> = row.get(8)?;
+            let env_vars: HashMap<String, String> = env_vars_str
+                .and_then(|s| serde_json::from_str(&s).ok())
+                .unwrap_or_default();
+
+            let is_trusted_val: bool = row.get(9)?;
+            let trusted_fp: Option<String> = row.get(13)?;
+
+            Ok(RunConfiguration {
+                id: row.get(0)?,
+                project_id: row.get(1)?,
+                service_id: row.get(2)?,
+                name: row.get(3)?,
+                command: row.get(4)?,
+                args: serde_json::from_str(&row.get::<_, String>(5)?).unwrap_or_default(),
+                working_dir: row.get(6)?,
+                env_file: row.get(7)?,
+                env_vars,
+                is_trusted: is_trusted_val,
+                trusted_fingerprint: trusted_fp,
+                is_default: row.get(10)?,
+                source: serde_json::from_str(&format!("\"{}\"", row.get::<_, String>(11)?))
+                    .unwrap_or(crate::models::RunConfigSource::UserCreated),
+                created_at: row.get(12)?,
+            })
         })
-    }).map_err(|_| RunyardError::NotFound(format!("Run config {} not found", id)))?;
+        .map_err(|_| RunyardError::NotFound(format!("Run config {} not found", id)))?;
 
     Ok(config)
 }
@@ -474,11 +576,20 @@ pub fn save_run_config(config: &RunConfiguration) -> Result<()> {
         crate::models::RunConfigSource::Detected => "Detected",
         crate::models::RunConfigSource::UserCreated => "UserCreated",
     };
+
+    let computed_fp = config.compute_fingerprint();
+    let (is_trusted, trusted_fp) =
+        if config.is_trusted && config.trusted_fingerprint.as_deref() == Some(&computed_fp) {
+            (true, Some(computed_fp))
+        } else {
+            (false, None)
+        };
+
     conn.execute(
-        "INSERT INTO run_configurations (id, project_id, service_id, name, command, args, working_dir, env_file, env_vars, is_trusted, is_default, source, created_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+        "INSERT INTO run_configurations (id, project_id, service_id, name, command, args, working_dir, env_file, env_vars, is_trusted, trusted_fingerprint, is_default, source, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
          ON CONFLICT(id) DO UPDATE SET
-         service_id = excluded.service_id, name = excluded.name, command = excluded.command, args = excluded.args, working_dir = excluded.working_dir, env_file = excluded.env_file, env_vars = excluded.env_vars, is_trusted = excluded.is_trusted, is_default = excluded.is_default",
+         service_id = excluded.service_id, name = excluded.name, command = excluded.command, args = excluded.args, working_dir = excluded.working_dir, env_file = excluded.env_file, env_vars = excluded.env_vars, is_trusted = excluded.is_trusted, trusted_fingerprint = excluded.trusted_fingerprint, is_default = excluded.is_default",
         (
             &config.id,
             &config.project_id,
@@ -489,7 +600,8 @@ pub fn save_run_config(config: &RunConfiguration) -> Result<()> {
             &config.working_dir,
             &config.env_file,
             serde_json::to_string(&config.env_vars)?,
-            config.is_trusted,
+            is_trusted,
+            &trusted_fp,
             config.is_default,
             source_str,
             &config.created_at,
@@ -506,16 +618,26 @@ pub fn delete_run_config(id: &str) -> Result<()> {
 
 pub fn set_default_run_config(project_id: &str, config_id: &str) -> Result<()> {
     let conn = get_connection()?;
-    conn.execute("UPDATE run_configurations SET is_default = 0 WHERE project_id = ?", [project_id])?;
-    conn.execute("UPDATE run_configurations SET is_default = 1 WHERE id = ?", [config_id])?;
-    conn.execute("UPDATE projects SET default_run_config_id = ? WHERE id = ?", [config_id, project_id])?;
+    conn.execute(
+        "UPDATE run_configurations SET is_default = 0 WHERE project_id = ?",
+        [project_id],
+    )?;
+    conn.execute(
+        "UPDATE run_configurations SET is_default = 1 WHERE id = ?",
+        [config_id],
+    )?;
+    conn.execute(
+        "UPDATE projects SET default_run_config_id = ? WHERE id = ?",
+        [config_id, project_id],
+    )?;
     Ok(())
 }
 
 pub fn get_run_groups(project_id: &str) -> Result<Vec<RunGroup>> {
     let conn = get_connection()?;
-    let mut stmt = conn.prepare("SELECT id, project_id, name, created_at FROM run_groups WHERE project_id = ?")?;
-    
+    let mut stmt = conn
+        .prepare("SELECT id, project_id, name, created_at FROM run_groups WHERE project_id = ?")?;
+
     let groups = stmt.query_map([project_id], |row| {
         let group_id: String = row.get(0)?;
         let name: String = row.get(2)?;
@@ -555,7 +677,10 @@ pub fn save_run_group(group: &RunGroup) -> Result<()> {
         (&group.id, &group.project_id, &group.name, &group.created_at),
     )?;
 
-    tx.execute("DELETE FROM run_group_members WHERE run_group_id = ?", [&group.id])?;
+    tx.execute(
+        "DELETE FROM run_group_members WHERE run_group_id = ?",
+        [&group.id],
+    )?;
 
     for (idx, config_id) in group.member_config_ids.iter().enumerate() {
         let member_id = uuid::Uuid::new_v4().to_string();
@@ -599,32 +724,47 @@ pub fn toggle_favorite(id: &str) -> Result<bool> {
     let mut project = get_project(id)?;
     project.is_favorite = !project.is_favorite;
     let conn = get_connection()?;
-    conn.execute("UPDATE projects SET is_favorite = ? WHERE id = ?", (project.is_favorite, id))?;
+    conn.execute(
+        "UPDATE projects SET is_favorite = ? WHERE id = ?",
+        (project.is_favorite, id),
+    )?;
     Ok(project.is_favorite)
 }
 
 pub fn update_project_tags(id: &str, tags: Vec<String>) -> Result<()> {
     let conn = get_connection()?;
-    conn.execute("UPDATE projects SET tags = ? WHERE id = ?", (serde_json::to_string(&tags)?, id))?;
+    conn.execute(
+        "UPDATE projects SET tags = ? WHERE id = ?",
+        (serde_json::to_string(&tags)?, id),
+    )?;
     Ok(())
 }
 
 pub fn set_preferred_ide(project_id: &str, ide_id: &str) -> Result<()> {
     let conn = get_connection()?;
-    conn.execute("UPDATE projects SET preferred_ide = ? WHERE id = ?", (ide_id, project_id))?;
+    conn.execute(
+        "UPDATE projects SET preferred_ide = ? WHERE id = ?",
+        (ide_id, project_id),
+    )?;
     Ok(())
 }
 
 pub fn update_last_opened(project_id: &str) -> Result<()> {
     let conn = get_connection()?;
     let now = chrono::Utc::now().to_rfc3339();
-    conn.execute("UPDATE projects SET last_opened = ? WHERE id = ?", (&now, project_id))?;
+    conn.execute(
+        "UPDATE projects SET last_opened = ? WHERE id = ?",
+        (&now, project_id),
+    )?;
     Ok(())
 }
 
 pub fn update_last_run(project_id: &str) -> Result<()> {
     let conn = get_connection()?;
     let now = chrono::Utc::now().to_rfc3339();
-    conn.execute("UPDATE projects SET last_run = ? WHERE id = ?", (&now, project_id))?;
+    conn.execute(
+        "UPDATE projects SET last_run = ? WHERE id = ?",
+        (&now, project_id),
+    )?;
     Ok(())
 }
