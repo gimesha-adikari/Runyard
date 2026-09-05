@@ -130,10 +130,11 @@ async fn test_process_lifecycle_and_log_streaming() {
     config.trusted_fingerprint = Some(config.compute_fingerprint());
 
     // 1. Start process
-    let proc_id = pm
+    let started_info = pm
         .start_process(project_id, config)
         .await
         .expect("Failed to start process");
+    let proc_id = started_info.id;
     assert!(!proc_id.is_empty());
 
     // Allow process to emit lines

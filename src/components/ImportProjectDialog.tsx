@@ -1,4 +1,4 @@
-import { open } from '@tauri-apps/plugin-dialog';
+import { pickDirectory } from '../lib/picker';
 import { getErrorMessage } from '../lib/utils';
 import React, { useState, useEffect } from 'react';
 import { tauriApi } from '../lib/tauri';
@@ -144,16 +144,15 @@ export const ImportProjectDialog: React.FC<ImportProjectDialogProps> = ({
                 type="button"
                 onClick={async () => {
                   try {
-                    const selected = await open({
-                      directory: true,
-                      multiple: false,
+                    const selected = await pickDirectory({
+                      title: 'Select Project Directory',
                     });
-                    if (selected && typeof selected === 'string') {
+                    if (selected) {
                       setPath(selected);
                       handleInspect(selected);
                     }
-                  } catch (e) {
-                    console.error('Failed to open dialog', e);
+                  } catch {
+                    // Error feedback is already surfaced via toast by pickDirectory
                   }
                 }}
                 className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-xs font-medium text-zinc-300 rounded-md transition-colors"

@@ -17,6 +17,8 @@ export interface Project {
   last_opened: string | null;
   last_run: string | null;
   created_at: string;
+  source?: 'Discovered' | 'Manual';
+  is_archived?: boolean;
 }
 
 export interface Service {
@@ -28,7 +30,40 @@ export interface Service {
   languages: string[];
   frameworks: string[];
   is_runnable: boolean;
+  source?: 'Detected' | 'Manual';
   created_at: string;
+}
+
+export type ScriptKind =
+  | 'DevelopmentServer'
+  | 'ApplicationStart'
+  | 'MultiServiceLauncher'
+  | 'InfrastructureTask';
+
+export type ScriptConfidence = 'High' | 'Medium' | 'Low';
+export type ScriptExecutionMode = 'Background' | 'TerminalRequired';
+
+export interface ProjectScript {
+  id: string;
+  project_id: string;
+  name: string;
+  relative_path: string;
+  command: string;
+  script_kind: ScriptKind;
+  confidence: ScriptConfidence;
+  execution_mode: ScriptExecutionMode;
+  evidence: string[];
+  is_trusted: boolean;
+  trusted_fingerprint?: string | null;
+}
+
+export interface ScriptDetectionMetrics {
+  candidates_considered: number;
+  candidates_opened: number;
+  bytes_read: number;
+  rejected_by_size: number;
+  rejected_by_name: number;
+  elapsed_ms: number;
 }
 
 export interface ScanRoot {
@@ -121,6 +156,7 @@ export interface ProcessInfo {
   status: ProcessStatus;
   started_at: string;
   exit_code: number | null;
+  pty_session_id?: string | null;
 }
 
 export interface OutputLine {
@@ -151,3 +187,17 @@ export interface ProjectInspection {
   git_status: GitStatus | null;
   already_imported: boolean;
 }
+
+export type ScanState = 'idle' | 'queued' | 'scanning' | 'completed' | 'failed' | 'cancelled';
+
+export interface ScanProgress {
+  root_id: string;
+  root_path: string;
+  state: ScanState;
+  directories_inspected: number;
+  projects_found: number;
+  services_found: number;
+  elapsed_ms: number;
+  error: string | null;
+}
+

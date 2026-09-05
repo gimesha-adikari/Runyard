@@ -67,6 +67,7 @@ pub fn inspect_project_path(path: String) -> Result<ProjectInspection> {
             languages: s.languages,
             frameworks: s.frameworks,
             is_runnable: false,
+            source: crate::models::ServiceSource::Detected,
             created_at: chrono::Utc::now().to_rfc3339(),
         })
         .collect();
@@ -86,7 +87,7 @@ pub fn inspect_project_path(path: String) -> Result<ProjectInspection> {
         run_configs.extend(svc_configs);
     }
 
-    let mut project = Project {
+    let project = Project {
         id: project_id,
         name,
         path: path.clone(),
@@ -110,6 +111,7 @@ pub fn inspect_project_path(path: String) -> Result<ProjectInspection> {
         source: crate::models::ProjectSource::Manual,
         parent_project_id: None,
         is_runnable: false,
+        is_archived: false,
         created_at: existing
             .as_ref()
             .map(|e| e.created_at.clone())
@@ -163,134 +165,18 @@ pub fn remove_project(id: String) -> Result<()> {
 }
 
 #[tauri::command]
-pub fn scan_projects() -> Result<Vec<Project>> {
+pub async fn scan_projects(
+    coordinator: State<'_, crate::ScanCoordinatorState>,
+    app: AppHandle,
+) -> Result<Vec<Project>> {
     let roots = crate::db::get_scan_roots()?;
-    let mut scanned_all = Vec::new();
-
     for root in roots {
         if root.enabled {
-            if let Ok(projects) = crate::scanner::scan_directory(&root.path) {
-                for p in projects {
-                    let path = Path::new(&p.path);
-                    let name = path
-                        .file_name()
-                        .map(|n| n.to_string_lossy().to_string())
-                        .unwrap_or_else(|| p.path.clone());
-
-                    let det = crate::detector::detect_project_type(&p.path);
-                    let git_status = if p.has_git {
-                        crate::git::get_git_status(&p.path).ok()
-                    } else {
-                        None
-                    };
-
-                    let existing = crate::db::get_project_by_path(&p.path)?;
-                    let project_id = existing
-                        .as_ref()
-                        .map(|proj| proj.id.clone())
-                        .unwrap_or_else(|| Uuid::new_v4().to_string());
-
-                    let mut project = Project {
-                        id: project_id.clone(),
-                        name,
-                        path: p.path.clone(),
-                        project_type: det.project_type,
-                        languages: det.languages,
-                        frameworks: det.frameworks,
-                        has_git: p.has_git,
-                        git_branch: git_status.as_ref().and_then(|g| g.branch.clone()),
-                        git_remote: git_status.as_ref().and_then(|g| g.remote_url.clone()),
-                        preferred_ide: existing.as_ref().and_then(|e| e.preferred_ide.clone()),
-                        default_run_config_id: existing
-                            .as_ref()
-                            .and_then(|e| e.default_run_config_id.clone()),
-                        is_favorite: existing.as_ref().map(|e| e.is_favorite).unwrap_or(false),
-                        tags: existing
-                            .as_ref()
-                            .map(|e| e.tags.clone())
-                            .unwrap_or_default(),
-                        last_opened: existing.as_ref().and_then(|e| e.last_opened.clone()),
-                        last_run: existing.as_ref().and_then(|e| e.last_run.clone()),
-                        source: crate::models::ProjectSource::Discovered,
-                        parent_project_id: None,
-                        is_runnable: false,
-                        created_at: existing
-                            .as_ref()
-                            .map(|e| e.created_at.clone())
-                            .unwrap_or_else(|| chrono::Utc::now().to_rfc3339()),
-                    };
-
-                    crate::db::upsert_project(&project)?;
-
-                    // Save nested services
-                    for svc in &p.services {
-                        let service = Service {
-                            is_runnable: false,
-                            id: Uuid::new_v4().to_string(),
-                            project_id: project_id.clone(),
-                            name: svc.name.clone(),
-                            path: svc.relative_path.clone(),
-                            service_type: svc.service_type.clone(),
-                            languages: svc.languages.clone(),
-                            frameworks: svc.frameworks.clone(),
-                            created_at: chrono::Utc::now().to_rfc3339(),
-                        };
-                        let _ = crate::db::upsert_service(&service);
-                    }
-
-                    // Populate detected run configs
-                    let detected_configs = crate::runtime_detector::detect_run_configs(&p.path);
-
-                    let parent_path_buf = Path::new(&p.path);
-                    let mut all_detected = Vec::new();
-                    for cfg in detected_configs {
-                        all_detected.push((cfg, None));
-                    }
-                    for svc in &p.services {
-                        let svc_path = parent_path_buf.join(&svc.relative_path);
-                        let svc_configs = crate::runtime_detector::detect_run_configs(
-                            &svc_path.to_string_lossy(),
-                        );
-                        // Find the corresponding service ID from the DB
-                        let svc_id = crate::db::get_services(&project_id)
-                            .ok()
-                            .unwrap_or_default()
-                            .into_iter()
-                            .find(|s| s.name == svc.name)
-                            .map(|s| s.id.clone());
-                        for mut cfg in svc_configs {
-                            cfg.name = format!("[{}] {}", svc.name, cfg.name);
-                            cfg.working_dir = Some(svc_path.to_string_lossy().to_string());
-                            all_detected.push((cfg, svc_id.clone()));
-                        }
-                    }
-                    for (cfg, svc_id) in all_detected {
-                        let run_config = RunConfiguration {
-                            id: Uuid::new_v4().to_string(),
-                            project_id: project_id.clone(),
-                            service_id: svc_id,
-                            name: cfg.name,
-                            command: cfg.command,
-                            args: cfg.args,
-                            working_dir: cfg.working_dir,
-                            env_file: None,
-                            env_vars: HashMap::new(),
-                            is_trusted: false,
-                            trusted_fingerprint: None,
-                            is_default: false,
-                            source: RunConfigSource::Detected,
-                            created_at: chrono::Utc::now().to_rfc3339(),
-                        };
-                        let _ = crate::db::save_run_config(&run_config);
-                    }
-
-                    scanned_all.push(project);
-                }
-            }
+            coordinator
+                .request_scan(&root.id, &root.path, Some(app.clone()))
+                .await;
         }
     }
-
-    let _ = crate::reconcile::reconcile_catalog();
 
     crate::db::get_all_projects()
 }
@@ -343,7 +229,11 @@ pub fn get_scan_roots() -> Result<Vec<ScanRoot>> {
 }
 
 #[tauri::command]
-pub fn add_scan_root(path: String) -> Result<ScanRoot> {
+pub async fn add_scan_root(
+    path: String,
+    coordinator: State<'_, crate::ScanCoordinatorState>,
+    app: AppHandle,
+) -> Result<ScanRoot> {
     let p = Path::new(&path);
     if !p.exists() || !p.is_dir() {
         return Err(RunyardError::Validation(format!(
@@ -353,17 +243,56 @@ pub fn add_scan_root(path: String) -> Result<ScanRoot> {
     }
     let root = ScanRoot {
         id: Uuid::new_v4().to_string(),
-        path,
+        path: path.clone(),
         enabled: true,
         created_at: chrono::Utc::now().to_rfc3339(),
     };
     crate::db::add_scan_root(&root)?;
+
+    // Automatically begin discovery for this newly added root only!
+    coordinator
+        .request_scan(&root.id, &root.path, Some(app))
+        .await;
+
     Ok(root)
 }
 
 #[tauri::command]
-pub fn remove_scan_root(id: String) -> Result<()> {
-    crate::db::remove_scan_root(&id)
+pub async fn remove_scan_root(
+    id: String,
+    coordinator: State<'_, crate::ScanCoordinatorState>,
+    app: AppHandle,
+) -> Result<()> {
+    // 1. Cancel in-flight scan for this root immediately so stale results are never committed
+    coordinator.cancel_root_scan(&id, Some(&app)).await;
+
+    // 2. Perform DB removal and catalog cleanup
+    crate::db::remove_scan_root(&id)?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn rescan_root(
+    id: String,
+    coordinator: State<'_, crate::ScanCoordinatorState>,
+    app: AppHandle,
+) -> Result<()> {
+    let roots = crate::db::get_scan_roots()?;
+    if let Some(root) = roots.into_iter().find(|r| r.id == id) {
+        if root.enabled {
+            coordinator
+                .request_scan(&root.id, &root.path, Some(app))
+                .await;
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn get_scan_status(
+    coordinator: State<'_, crate::ScanCoordinatorState>,
+) -> Result<HashMap<String, crate::scan_coordinator::ScanProgress>> {
+    Ok(coordinator.get_all_progress().await)
 }
 
 // Git
@@ -469,7 +398,15 @@ pub fn set_default_ide(ide_id: String) -> Result<()> {
 
 #[tauri::command]
 pub fn get_run_configs(project_id: String) -> Result<Vec<RunConfiguration>> {
-    crate::db::get_run_configs(&project_id)
+    let mut configs = crate::db::get_run_configs(&project_id)?;
+    if let Ok(project) = crate::db::get_project(&project_id) {
+        let p_path = Path::new(&project.path);
+        for cfg in &mut configs {
+            let base_dir = cfg.working_dir.as_deref().map(Path::new).or(Some(p_path));
+            cfg.is_trusted = cfg.is_trust_valid_with_base(base_dir);
+        }
+    }
+    Ok(configs)
 }
 
 #[tauri::command]
@@ -492,6 +429,183 @@ pub fn detect_run_configs(project_path: String) -> Result<Vec<DetectedRunConfig>
 }
 
 #[tauri::command]
+pub fn detect_project_scripts(
+    project_path: String,
+    project_id: Option<String>,
+) -> Result<Vec<crate::models::ProjectScript>> {
+    let conn = crate::db::get_connection().ok();
+    detect_project_scripts_with_conn(conn.as_ref(), &project_path, project_id.as_deref())
+}
+
+pub fn detect_project_scripts_with_conn(
+    conn: Option<&rusqlite::Connection>,
+    project_path: &str,
+    project_id: Option<&str>,
+) -> Result<Vec<crate::models::ProjectScript>> {
+    let p = Path::new(project_path);
+    let pid = project_id.unwrap_or_default();
+    if let Some(c) = conn {
+        if !pid.is_empty() {
+            let _ = crate::reconcile::reconcile_project_script_configs(c, pid, p);
+        }
+    }
+    let mut scripts = crate::script_detector::detect_project_scripts(p, pid);
+
+    if let Some(c) = conn {
+        if let Ok(configs) = crate::db::get_run_configs_with_conn(c, pid) {
+            for script in &mut scripts {
+                let clean_rel = script.relative_path.clone();
+                let stable_id = uuid::Uuid::new_v5(
+                    &uuid::Uuid::NAMESPACE_DNS,
+                    format!("runyard:script:{}:{}", pid, clean_rel).as_bytes(),
+                )
+                .to_string();
+
+                if let Some(cfg) = configs.iter().find(|cfg_item| {
+                    cfg_item.id == stable_id
+                        || cfg_item.command == script.command
+                        || cfg_item.command == format!("./{}", script.relative_path)
+                        || cfg_item.command == script.relative_path
+                }) {
+                    script.is_trusted = cfg.is_trust_valid_with_base(Some(p));
+                    script.trusted_fingerprint = cfg.trusted_fingerprint.clone();
+                }
+            }
+        }
+    }
+
+    Ok(scripts)
+}
+
+#[tauri::command]
+pub fn inspect_script_detection(
+    project_path: String,
+    project_id: Option<String>,
+) -> Result<(
+    Vec<crate::models::ProjectScript>,
+    crate::script_detector::ScriptDetectionMetrics,
+)> {
+    let p = Path::new(&project_path);
+    let pid = project_id.unwrap_or_default();
+    let (mut scripts, metrics) =
+        crate::script_detector::detect_project_scripts_with_metrics(p, &pid);
+
+    if let Ok(conn) = crate::db::get_connection() {
+        if let Ok(configs) = crate::db::get_run_configs_with_conn(&conn, &pid) {
+            for script in &mut scripts {
+                let clean_rel = script.relative_path.clone();
+                let stable_id = uuid::Uuid::new_v5(
+                    &uuid::Uuid::NAMESPACE_DNS,
+                    format!("runyard:script:{}:{}", pid, clean_rel).as_bytes(),
+                )
+                .to_string();
+
+                if let Some(cfg) = configs.iter().find(|c| {
+                    c.id == stable_id
+                        || c.command == script.command
+                        || c.command == format!("./{}", script.relative_path)
+                        || c.command == script.relative_path
+                }) {
+                    script.is_trusted = cfg.is_trust_valid_with_base(Some(p));
+                    script.trusted_fingerprint = cfg.trusted_fingerprint.clone();
+                }
+            }
+        }
+    }
+
+    Ok((scripts, metrics))
+}
+
+#[tauri::command]
+pub fn get_or_create_script_run_config(
+    project_id: String,
+    script_relative_path: String,
+) -> Result<RunConfiguration> {
+    let conn = crate::db::get_connection()?;
+    get_or_create_script_run_config_with_conn(&conn, &project_id, &script_relative_path)
+}
+
+pub fn get_or_create_script_run_config_with_conn(
+    conn: &rusqlite::Connection,
+    project_id: &str,
+    script_relative_path: &str,
+) -> Result<RunConfiguration> {
+    let project = crate::db::get_project_with_conn(conn, project_id)?;
+    let p_path = Path::new(&project.path);
+    let full_script_path = p_path.join(script_relative_path);
+
+    let canonical_base = p_path
+        .canonicalize()
+        .map_err(|e| RunyardError::Validation(format!("Invalid project path: {}", e)))?;
+    let canonical_script = full_script_path
+        .canonicalize()
+        .map_err(|e| RunyardError::Validation(format!("Script file does not exist: {}", e)))?;
+
+    if !canonical_script.starts_with(&canonical_base) {
+        return Err(RunyardError::Validation(
+            "Script target escapes project root".into(),
+        ));
+    }
+
+    let clean_rel = canonical_script
+        .strip_prefix(&canonical_base)
+        .unwrap_or(&canonical_script)
+        .to_string_lossy()
+        .to_string();
+
+    let stable_id = uuid::Uuid::new_v5(
+        &uuid::Uuid::NAMESPACE_DNS,
+        format!("runyard:script:{}:{}", project_id, clean_rel).as_bytes(),
+    )
+    .to_string();
+
+    let existing_configs = crate::db::get_run_configs_with_conn(conn, project_id)?;
+
+    // 1. If an existing config matches by stable ID, return it
+    if let Some(cfg) = existing_configs.iter().find(|c| c.id == stable_id) {
+        return Ok(cfg.clone());
+    }
+
+    // 2. If a config matches by command or relative path, return it (never overwrite UserCreated)
+    let cmd_variant_1 = format!("./{}", clean_rel);
+    let cmd_variant_2 = clean_rel.clone();
+    if let Some(cfg) = existing_configs.iter().find(|c| {
+        (c.working_dir.as_deref() == Some(&project.path) || c.working_dir.is_none())
+            && (c.command == cmd_variant_1
+                || c.command == cmd_variant_2
+                || c.command.ends_with(&clean_rel))
+    }) {
+        return Ok(cfg.clone());
+    }
+
+    // 3. Create deterministic Detected config
+    let file_name = canonical_script
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| clean_rel.clone());
+
+    let new_config = RunConfiguration {
+        id: stable_id,
+        project_id: project_id.to_string(),
+        service_id: None,
+        name: file_name,
+        command: format!("./{}", clean_rel),
+        args: vec![],
+        working_dir: Some(project.path),
+        env_file: None,
+        env_vars: HashMap::new(),
+        is_trusted: false,
+        trusted_fingerprint: None,
+        is_default: false,
+        source: RunConfigSource::Detected,
+        created_at: chrono::Utc::now().to_rfc3339(),
+    };
+
+    crate::db::save_run_config_with_conn(conn, &new_config)?;
+    Ok(new_config)
+}
+
+#[tauri::command]
 pub fn save_run_config(config: RunConfiguration) -> Result<()> {
     crate::db::save_run_config(&config)
 }
@@ -501,12 +615,24 @@ pub fn delete_run_config(id: String) -> Result<()> {
     crate::db::delete_run_config(&id)
 }
 
+pub fn trust_run_config_with_conn(conn: &rusqlite::Connection, id: &str) -> Result<()> {
+    let mut config = crate::db::get_run_config_with_conn(conn, id)?;
+    let project = crate::db::get_project_with_conn(conn, &config.project_id).ok();
+    let base_dir = config
+        .working_dir
+        .as_deref()
+        .map(Path::new)
+        .or_else(|| project.as_ref().map(|p| Path::new(&p.path)));
+
+    config.is_trusted = true;
+    config.trusted_fingerprint = Some(config.compute_fingerprint_with_base(base_dir));
+    crate::db::save_run_config_with_conn(conn, &config)
+}
+
 #[tauri::command]
 pub fn trust_run_config(id: String) -> Result<()> {
-    let mut config = crate::db::get_run_config(&id)?;
-    config.is_trusted = true;
-    config.trusted_fingerprint = Some(config.compute_fingerprint());
-    crate::db::save_run_config(&config)
+    let conn = crate::db::get_connection()?;
+    trust_run_config_with_conn(&conn, &id)
 }
 
 #[tauri::command]
@@ -551,7 +677,14 @@ pub async fn start_run_group(
         let mut res = Vec::new();
         for cid in config_ids {
             let config = crate::db::get_run_config(&cid)?;
-            if !config.is_trust_valid() {
+            let project = crate::db::get_project(&config.project_id).ok();
+            let base_dir = config
+                .working_dir
+                .as_deref()
+                .map(Path::new)
+                .or_else(|| project.as_ref().map(|p| Path::new(&p.path)));
+
+            if !config.is_trust_valid_with_base(base_dir) {
                 return Err(RunyardError::Validation(format!(
                     "Run configuration '{}' in group is not trusted or its execution semantics changed. Please re-approve before running.",
                     config.name
@@ -569,8 +702,8 @@ pub async fn start_run_group(
         let _ = crate::db::update_last_run(&project_id);
 
         let pm = state.lock().await;
-        if let Ok(pid) = pm.start_process(&project_id, config).await {
-            started_process_ids.push(pid);
+        if let Ok(info) = pm.start_process(&project_id, config).await {
+            started_process_ids.push(info.id);
         }
     }
 
@@ -606,49 +739,239 @@ pub async fn stop_run_group(group_id: String, state: State<'_, ProcessManagerSta
 
 // Processes & Output
 
+fn is_terminal_required(config: &RunConfiguration, base_dir: Option<&Path>) -> bool {
+    if let Ok(Some(script_path)) = config.resolve_script_path(base_dir) {
+        if let Ok(bytes) = std::fs::read(&script_path) {
+            let content = String::from_utf8_lossy(&bytes);
+            let (mode, _) = crate::script_detector::detect_interactive_signals(&content);
+            return mode == crate::models::ScriptExecutionMode::TerminalRequired;
+        }
+    }
+    false
+}
+
+pub async fn start_configured_process_core(
+    config: RunConfiguration,
+    project: Option<&Project>,
+    state: &ProcessManagerState,
+    pty_state: &PtyManagerState,
+    app_handle: Option<AppHandle>,
+) -> Result<ProcessInfo> {
+    let project_id = config.project_id.clone();
+    let base_dir = config
+        .working_dir
+        .as_deref()
+        .map(Path::new)
+        .or_else(|| project.map(|p| Path::new(&p.path)));
+
+    if is_terminal_required(&config, base_dir) {
+        let working_dir_str = config
+            .working_dir
+            .as_deref()
+            .or_else(|| project.map(|p| p.path.as_str()))
+            .unwrap_or(".");
+
+        let (session_id, pid) = pty_state.create_command_session(
+            app_handle.clone(),
+            working_dir_str,
+            &config.command,
+            &config.args,
+            &config.env_vars,
+            80,
+            24,
+        )?;
+
+        let pm = state.lock().await;
+        let info = pm
+            .register_pty_process(&project_id, &config, pid, &session_id)
+            .await?;
+
+        if let Some(app) = app_handle {
+            let pm_clone = state.clone();
+            let proc_id_clone = info.id.clone();
+            let session_id_clone = session_id.clone();
+            tokio::spawn(async move {
+                use tauri::Listener;
+                let (tx, rx) = tokio::sync::oneshot::channel();
+                let tx_mutex = std::sync::Arc::new(std::sync::Mutex::new(Some(tx)));
+                let unlisten = app.listen(format!("pty-exit-{}", session_id_clone), move |_| {
+                    if let Some(sender) = tx_mutex.lock().unwrap().take() {
+                        let _ = sender.send(());
+                    }
+                });
+                let _ = rx.await;
+                app.unlisten(unlisten);
+                let pm = pm_clone.lock().await;
+                pm.mark_process_exited(&proc_id_clone, 0).await;
+            });
+        }
+
+        Ok(info)
+    } else {
+        let pm = state.lock().await;
+        pm.start_process(&project_id, config).await
+    }
+}
+
+pub async fn start_process_with_state_and_conn(
+    conn: &rusqlite::Connection,
+    run_config_id: &str,
+    state: &ProcessManagerState,
+    pty_state: &PtyManagerState,
+    app_handle: Option<AppHandle>,
+) -> Result<ProcessInfo> {
+    let (config, project) = {
+        let config = crate::db::get_run_config_with_conn(conn, run_config_id)?;
+        let project = crate::db::get_project_with_conn(conn, &config.project_id).ok();
+        let _ = crate::db::update_last_run_with_conn(conn, &config.project_id);
+
+        let base_dir = config
+            .working_dir
+            .as_deref()
+            .map(Path::new)
+            .or_else(|| project.as_ref().map(|p| Path::new(&p.path)));
+
+        if !config.is_trust_valid_with_base(base_dir) {
+            return Err(RunyardError::Validation(
+                "Run configuration is not trusted or its execution semantics changed. Please re-approve before running.".to_string(),
+            ));
+        }
+        (config, project)
+    };
+
+    start_configured_process_core(config, project.as_ref(), state, pty_state, app_handle).await
+}
+
+pub async fn run_untrusted_once_with_state_and_conn(
+    conn: &rusqlite::Connection,
+    run_config_id: &str,
+    state: &ProcessManagerState,
+    pty_state: &PtyManagerState,
+    app_handle: Option<AppHandle>,
+) -> Result<ProcessInfo> {
+    let (config, project) = {
+        let config = crate::db::get_run_config_with_conn(conn, run_config_id)?;
+        let project = crate::db::get_project_with_conn(conn, &config.project_id).ok();
+        let _ = crate::db::update_last_run_with_conn(conn, &config.project_id);
+        (config, project)
+    };
+    start_configured_process_core(config, project.as_ref(), state, pty_state, app_handle).await
+}
+
+pub async fn stop_process_with_state(
+    process_id: &str,
+    state: &ProcessManagerState,
+    pty_state: &PtyManagerState,
+) -> Result<()> {
+    let pty_sid = {
+        let pm = state.lock().await;
+        let procs = pm.get_all_processes().await;
+        procs
+            .iter()
+            .find(|p| p.id == process_id)
+            .and_then(|p| p.pty_session_id.clone())
+    };
+
+    let pm = state.lock().await;
+    let res = pm.stop_process(process_id).await;
+
+    if let Some(sid) = pty_sid {
+        let _ = pty_state.close_session(&sid).await;
+    }
+
+    res
+}
+
+pub async fn list_processes_with_state(state: &ProcessManagerState) -> Vec<ProcessInfo> {
+    let pm = state.lock().await;
+    pm.get_all_processes().await
+}
+
+pub async fn write_pty_session_with_state(
+    session_id: &str,
+    data: &str,
+    pty_state: &PtyManagerState,
+) -> Result<()> {
+    pty_state.write_session(session_id, data).await
+}
+
 #[tauri::command]
 pub async fn start_process(
     run_config_id: String,
     state: State<'_, ProcessManagerState>,
-) -> Result<String> {
-    let config = crate::db::get_run_config(&run_config_id)?;
+    pty_state: State<'_, PtyManagerState>,
+    app_handle: AppHandle,
+) -> Result<ProcessInfo> {
+    let (config, project) = {
+        let conn = crate::db::get_connection()?;
+        let config = crate::db::get_run_config_with_conn(&conn, &run_config_id)?;
+        let project = crate::db::get_project_with_conn(&conn, &config.project_id).ok();
+        let _ = crate::db::update_last_run_with_conn(&conn, &config.project_id);
 
-    if !config.is_trust_valid() {
-        return Err(RunyardError::Validation(
-            "Run configuration is not trusted or its execution semantics changed. Please re-approve before running.".to_string(),
-        ));
-    }
+        let base_dir = config
+            .working_dir
+            .as_deref()
+            .map(Path::new)
+            .or_else(|| project.as_ref().map(|p| Path::new(&p.path)));
 
-    let project_id = config.project_id.clone();
-    crate::db::update_last_run(&project_id)?;
+        if !config.is_trust_valid_with_base(base_dir) {
+            return Err(RunyardError::Validation(
+                "Run configuration is not trusted or its execution semantics changed. Please re-approve before running.".to_string(),
+            ));
+        }
+        (config, project)
+    };
 
-    let pm = state.lock().await;
-    pm.start_process(&project_id, config).await
+    start_configured_process_core(
+        config,
+        project.as_ref(),
+        state.inner(),
+        pty_state.inner(),
+        Some(app_handle),
+    )
+    .await
 }
 
 #[tauri::command]
 pub async fn run_untrusted_once(
     run_config_id: String,
     state: State<'_, ProcessManagerState>,
-) -> Result<String> {
-    let config = crate::db::get_run_config(&run_config_id)?;
-    let project_id = config.project_id.clone();
-    crate::db::update_last_run(&project_id)?;
+    pty_state: State<'_, PtyManagerState>,
+    app_handle: AppHandle,
+) -> Result<ProcessInfo> {
+    let (config, project) = {
+        let conn = crate::db::get_connection()?;
+        let config = crate::db::get_run_config_with_conn(&conn, &run_config_id)?;
+        let project = crate::db::get_project_with_conn(&conn, &config.project_id).ok();
+        let _ = crate::db::update_last_run_with_conn(&conn, &config.project_id);
+        (config, project)
+    };
 
-    let pm = state.lock().await;
-    pm.start_process(&project_id, config).await
+    start_configured_process_core(
+        config,
+        project.as_ref(),
+        state.inner(),
+        pty_state.inner(),
+        Some(app_handle),
+    )
+    .await
 }
 
 #[tauri::command]
-pub async fn stop_process(process_id: String, state: State<'_, ProcessManagerState>) -> Result<()> {
-    let pm = state.lock().await;
-    pm.stop_process(&process_id).await
+pub async fn stop_process(
+    process_id: String,
+    state: State<'_, ProcessManagerState>,
+    pty_state: State<'_, PtyManagerState>,
+) -> Result<()> {
+    stop_process_with_state(&process_id, state.inner(), pty_state.inner()).await
 }
 
 #[tauri::command]
 pub async fn restart_process(
     process_id: String,
     state: State<'_, ProcessManagerState>,
+    pty_state: State<'_, PtyManagerState>,
+    app_handle: AppHandle,
 ) -> Result<()> {
     let (config, project_id) = {
         let pm = state.lock().await;
@@ -662,23 +985,34 @@ pub async fn restart_process(
         (config, project_id)
     };
 
-    if !config.is_trust_valid() {
+    let project = crate::db::get_project(&project_id).ok();
+    let base_dir = config
+        .working_dir
+        .as_deref()
+        .map(Path::new)
+        .or_else(|| project.as_ref().map(|p| Path::new(&p.path)));
+
+    if !config.is_trust_valid_with_base(base_dir) {
         return Err(RunyardError::Validation(
             "Run configuration is not trusted or its execution semantics changed. Please re-approve before running.".to_string(),
         ));
     }
 
-    let pm = state.lock().await;
-    pm.stop_process(&process_id).await?;
-    let _ = crate::db::update_last_run(&project_id);
-    pm.start_process(&project_id, config).await?;
+    stop_process_with_state(&process_id, state.inner(), pty_state.inner()).await?;
+    start_configured_process_core(
+        config,
+        project.as_ref(),
+        state.inner(),
+        pty_state.inner(),
+        Some(app_handle),
+    )
+    .await?;
     Ok(())
 }
 
 #[tauri::command]
 pub async fn get_processes(state: State<'_, ProcessManagerState>) -> Result<Vec<ProcessInfo>> {
-    let pm = state.lock().await;
-    Ok(pm.get_all_processes().await)
+    Ok(list_processes_with_state(state.inner()).await)
 }
 
 #[tauri::command]
@@ -710,7 +1044,7 @@ pub fn create_pty_session(
     rows: u16,
     state: State<'_, PtyManagerState>,
 ) -> Result<String> {
-    state.create_session(app_handle, &project_path, cols, rows)
+    state.create_session(Some(app_handle), &project_path, cols, rows)
 }
 
 #[tauri::command]

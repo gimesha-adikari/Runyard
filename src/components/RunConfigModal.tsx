@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { RunConfiguration, Service } from '../types';
 import { Plus, Trash2, X, Play, ShieldAlert } from 'lucide-react';
+import { CustomSelect } from './common/CustomSelect';
 
 interface RunConfigModalProps {
   isOpen: boolean;
@@ -137,16 +138,16 @@ export const RunConfigModal: React.FC<RunConfigModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 animate-in fade-in duration-100"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 animate-in fade-in duration-fast"
       onClick={onClose}
     >
       <div
-        className="bg-zinc-900 border border-zinc-800 rounded-xl w-full max-w-lg overflow-hidden shadow-2xl flex flex-col max-h-[90vh]"
+        className="bg-[#111114] border border-border-card rounded-[6px] w-full max-w-lg overflow-hidden shadow-2xl flex flex-col max-h-[90vh] menu-entrance"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800 bg-zinc-950/60">
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-border-card bg-[#0c0c0e]">
           <div className="flex items-center gap-2.5">
-            <div className="p-2 bg-emerald-500/10 rounded-lg text-emerald-400">
+            <div className="p-2 bg-emerald-500/10 rounded-[4px] text-emerald-400">
               <Play className="w-4 h-4" />
             </div>
             <div>
@@ -158,7 +159,7 @@ export const RunConfigModal: React.FC<RunConfigModalProps> = ({
           </div>
           <button
             onClick={onClose}
-            className="text-zinc-500 hover:text-zinc-300 transition-colors p-1"
+            className="text-zinc-500 hover:text-zinc-300 btn-tactile transition-colors duration-fast p-1 rounded-[2px]"
             title="Close (Esc)"
           >
             <X className="w-5 h-5" />
@@ -174,31 +175,38 @@ export const RunConfigModal: React.FC<RunConfigModalProps> = ({
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g. dev-server, worker, test:watch"
-              className="w-full bg-zinc-950 border border-zinc-800 rounded-md px-3 py-2 text-xs text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-emerald-500"
+              className="w-full bg-[#0c0c0e] border border-border-card rounded-[3px] px-3 py-1.5 text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-border-accent focus:ring-1 focus:ring-emerald-500/20 transition-all duration-fast"
             />
           </div>
 
           {services.length > 0 && (
             <div>
-              <label className="block text-xs font-medium text-zinc-300 mb-1">Target Service (Optional)</label>
-              <select
+              <label className="block text-xs font-medium text-zinc-300 mb-1">
+                Target Service (Optional)
+              </label>
+              <CustomSelect
                 value={serviceId}
-                onChange={(e) => {
-                  setServiceId(e.target.value);
-                  const selected = services.find((s) => s.id === e.target.value);
+                onChange={(val) => {
+                  setServiceId(val);
+                  const selected = services.find((s) => s.id === val);
                   if (selected) {
                     setWorkingDir(`${projectPath}/${selected.path}`);
+                  } else {
+                    setWorkingDir(projectPath);
                   }
                 }}
-                className="w-full bg-zinc-950 border border-zinc-800 rounded-md px-3 py-2 text-xs text-zinc-100 focus:outline-none focus:border-emerald-500"
-              >
-                <option value="">Root Project ({projectPath})</option>
-                {services.map((svc) => (
-                  <option key={svc.id} value={svc.id}>
-                    {svc.name} ({svc.path})
-                  </option>
-                ))}
-              </select>
+                options={[
+                  { value: '', label: `Root Project (${projectPath})` },
+                  ...services.map((svc) => ({
+                    value: svc.id,
+                    label: svc.name,
+                    secondaryLabel: svc.path,
+                  })),
+                ]}
+                className="w-full"
+                buttonClassName="w-full h-8 px-3 text-xs bg-zinc-950 border-zinc-800"
+                size="md"
+              />
             </div>
           )}
 
@@ -353,18 +361,18 @@ export const RunConfigModal: React.FC<RunConfigModalProps> = ({
             )}
           </div>
 
-          <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-zinc-800">
+          <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-border-card">
             <button
               type="button"
               onClick={onClose}
-              className="px-3.5 py-1.5 text-xs text-zinc-400 hover:text-zinc-200 transition-colors rounded-md"
+              className="px-3.5 py-1.5 text-xs text-zinc-400 hover:text-zinc-200 hover:bg-[#18181f] rounded-[3px] btn-tactile transition-colors duration-fast"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={!name.trim() || !command.trim()}
-              className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-xs font-medium text-white rounded-md transition-colors"
+              className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-xs font-medium text-white rounded-[3px] btn-tactile transition-colors duration-fast"
             >
               Save Configuration
             </button>

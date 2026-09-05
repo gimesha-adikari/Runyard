@@ -22,16 +22,16 @@ export function TrustDialog({ config, onCancel, onRunOnce, onTrustAndRun }: Prop
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 animate-in fade-in duration-100"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 animate-in fade-in duration-fast"
       onClick={onCancel}
     >
       <div
-        className="bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl max-w-lg w-full overflow-hidden flex flex-col"
+        className="bg-[#111114] border border-border-card rounded-[6px] shadow-2xl max-w-lg w-full overflow-hidden flex flex-col menu-entrance"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800 bg-zinc-950/60">
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-border-card bg-[#0c0c0e]">
           <div className="flex items-center gap-2.5">
-            <div className="p-2 bg-amber-500/10 rounded-lg text-amber-400">
+            <div className="p-2 bg-amber-500/10 rounded-[4px] text-amber-400">
               <ShieldAlert className="w-5 h-5" />
             </div>
             <div>
@@ -41,7 +41,7 @@ export function TrustDialog({ config, onCancel, onRunOnce, onTrustAndRun }: Prop
           </div>
           <button
             onClick={onCancel}
-            className="text-zinc-500 hover:text-zinc-300 transition-colors p-1"
+            className="text-zinc-500 hover:text-zinc-300 btn-tactile transition-colors duration-fast p-1 rounded-[2px]"
             title="Close (Esc)"
           >
             <X className="w-5 h-5" />
@@ -53,18 +53,18 @@ export function TrustDialog({ config, onCancel, onRunOnce, onTrustAndRun }: Prop
             This run configuration was automatically discovered in project files. Verify the command and arguments below before executing native processes on your machine.
           </p>
 
-          <div className="bg-zinc-950 rounded-lg p-3.5 border border-zinc-800 font-mono space-y-2">
+          <div className="bg-[#0c0c0e] rounded-[4px] p-3.5 border border-border-card font-mono space-y-2">
             <div className="flex items-center justify-between text-zinc-500 text-[11px]">
               <div className="flex items-center gap-1.5">
                 <Terminal className="w-3.5 h-3.5 text-zinc-400" />
                 <span className="font-semibold text-zinc-300">{config.name}</span>
               </div>
-              <span className="text-[10px] px-1.5 py-0.2 bg-zinc-800 text-zinc-400 rounded">
+              <span className="text-[10px] px-1.5 py-0.2 bg-zinc-800 text-zinc-400 rounded-[2px]">
                 {config.source}
               </span>
             </div>
 
-            <div className="text-emerald-400 text-xs break-all bg-zinc-900/60 p-2 rounded border border-zinc-800/60">
+            <div className="text-emerald-400 text-xs break-all bg-[#141418] p-2 rounded-[3px] border border-border-card">
               <span className="text-zinc-500 mr-1.5">$</span>
               {config.command} {config.args.join(' ')}
             </div>
@@ -77,23 +77,23 @@ export function TrustDialog({ config, onCancel, onRunOnce, onTrustAndRun }: Prop
           </div>
         </div>
 
-        <div className="flex items-center justify-end gap-2.5 px-5 py-3.5 bg-zinc-950 border-t border-zinc-800">
+        <div className="flex items-center justify-end gap-2.5 px-5 py-3.5 bg-[#0c0c0e] border-t border-border-card">
           <button
             onClick={onCancel}
-            className="px-3.5 py-1.5 rounded-md text-xs font-medium text-zinc-400 hover:text-zinc-200 transition-colors"
+            className="px-3.5 py-1.5 rounded-[3px] text-xs font-medium text-zinc-400 hover:text-zinc-200 hover:bg-[#18181f] btn-tactile transition-colors duration-fast"
           >
             Cancel
           </button>
           <button
             onClick={onRunOnce}
-            className="px-3.5 py-1.5 rounded-md text-xs font-medium bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 transition-colors flex items-center gap-1"
+            className="px-3.5 py-1.5 rounded-[3px] text-xs font-medium bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 btn-tactile transition-colors duration-fast flex items-center gap-1"
           >
             <Play className="w-3 h-3" />
             <span>Run Once</span>
           </button>
           <button
             onClick={onTrustAndRun}
-            className="px-4 py-1.5 rounded-md text-xs font-medium bg-emerald-600 hover:bg-emerald-500 text-white transition-colors flex items-center gap-1.5"
+            className="px-4 py-1.5 rounded-[3px] text-xs font-medium bg-emerald-600 hover:bg-emerald-500 text-white btn-tactile transition-colors duration-fast flex items-center gap-1.5"
           >
             <ShieldCheck className="w-3.5 h-3.5" />
             <span>Trust & Run</span>

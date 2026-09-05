@@ -159,7 +159,7 @@ pub fn get_git_status(project_path: &str) -> Result<GitStatus> {
     if let Ok(out) = rev_output {
         if out.status.success() {
             let stdout = String::from_utf8_lossy(&out.stdout);
-            let parts: Vec<&str> = stdout.trim().split_whitespace().collect();
+            let parts: Vec<&str> = stdout.split_whitespace().collect();
             if parts.len() == 2 {
                 ahead = parts[0].parse().unwrap_or(0);
                 behind = parts[1].parse().unwrap_or(0);

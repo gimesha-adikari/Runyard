@@ -41,7 +41,10 @@ fn test_complex_monorepo_detection() {
 
     assert!(names.contains(&"web".to_string()));
     assert!(names.contains(&"api".to_string()));
-    assert!(names.contains(&"shared".to_string()));
+    assert!(
+        !names.contains(&"shared".to_string()),
+        "Library package without runtime scripts must not be a service"
+    );
 }
 
 #[test]

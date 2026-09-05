@@ -31,16 +31,16 @@ const ToastItem: React.FC<ToastItemProps> = ({ toast, onClose }) => {
   };
 
   const borders = {
-    success: 'border-emerald-800/80 bg-zinc-900/95 text-zinc-100 shadow-emerald-950/20',
-    error: 'border-red-800/80 bg-zinc-900/95 text-zinc-100 shadow-red-950/20',
-    warning: 'border-amber-800/80 bg-zinc-900/95 text-zinc-100 shadow-amber-950/20',
-    info: 'border-blue-800/80 bg-zinc-900/95 text-zinc-100 shadow-blue-950/20',
+    success: 'border-emerald-800/80 bg-[#141418]/95 text-zinc-100 shadow-emerald-950/20',
+    error: 'border-red-800/80 bg-[#141418]/95 text-zinc-100 shadow-red-950/20',
+    warning: 'border-amber-800/80 bg-[#141418]/95 text-zinc-100 shadow-amber-950/20',
+    info: 'border-blue-800/80 bg-[#141418]/95 text-zinc-100 shadow-blue-950/20',
   };
 
   return (
     <div
       className={cn(
-        'pointer-events-auto flex items-start justify-between gap-3 p-3.5 rounded-lg border shadow-xl backdrop-blur-md transition-all text-xs animate-in slide-in-from-bottom-2 duration-150',
+        'pointer-events-auto flex items-start justify-between gap-3 p-3 rounded-[4px] border shadow-xl backdrop-blur-md transition-all text-xs animate-in slide-in-from-bottom-2 duration-fast',
         borders[toast.type]
       )}
     >
@@ -48,12 +48,14 @@ const ToastItem: React.FC<ToastItemProps> = ({ toast, onClose }) => {
         {icons[toast.type]}
         <div className="space-y-0.5 min-w-0">
           {toast.title && <div className="font-semibold text-zinc-200">{toast.title}</div>}
-          <div className="text-zinc-300 break-words whitespace-pre-wrap">{toast.message}</div>
+          <div className="text-zinc-300 break-words whitespace-pre-wrap font-sans">
+            {typeof toast.message === 'string' ? toast.message : String(toast.message ?? '')}
+          </div>
         </div>
       </div>
       <button
         onClick={onClose}
-        className="text-zinc-500 hover:text-zinc-300 transition-colors p-0.5 -mr-1 -mt-1 shrink-0"
+        className="text-zinc-500 hover:text-zinc-300 btn-tactile transition-colors duration-fast p-0.5 -mr-1 -mt-1 rounded-[2px] shrink-0"
         aria-label="Dismiss notification"
       >
         <X className="w-3.5 h-3.5" />

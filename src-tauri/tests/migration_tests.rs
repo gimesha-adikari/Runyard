@@ -107,7 +107,7 @@ fn test_migration_from_v1_to_current_preserves_all_data() {
     // 3. Run migration to current version
     runyard_lib::db::migrate(&mut conn).unwrap();
 
-    // 4. Verify schema version is 3
+    // 4. Verify schema version is 7
     let version: i32 = conn
         .query_row(
             "SELECT version FROM schema_version ORDER BY version DESC LIMIT 1",
@@ -115,19 +115,31 @@ fn test_migration_from_v1_to_current_preserves_all_data() {
             |r| r.get(0),
         )
         .unwrap();
-    assert_eq!(version, 5);
+    assert_eq!(version, 8);
+
+    // Verify services source column exists
+    let svc_cols: Vec<String> = {
+        let mut pragma = conn.prepare("PRAGMA table_info(services)").unwrap();
+        pragma
+            .query_map([], |r| r.get(1))
+            .unwrap()
+            .filter_map(|r| r.ok())
+            .collect()
+    };
+    assert!(svc_cols.contains(&"source".to_string()));
 
     // 5. Verify project data preservation
-    let (id, name, path, is_fav, pref_ide, tags): (
+    let (id, name, path, is_fav, pref_ide, tags, is_archived): (
         String,
         String,
         String,
         bool,
         Option<String>,
         String,
+        bool,
     ) = conn
         .query_row(
-            "SELECT id, name, path, is_favorite, preferred_ide, tags FROM projects WHERE id = 'p1'",
+            "SELECT id, name, path, is_favorite, preferred_ide, tags, is_archived FROM projects WHERE id = 'p1'",
             [],
             |r| {
                 Ok((
@@ -137,6 +149,7 @@ fn test_migration_from_v1_to_current_preserves_all_data() {
                     r.get(3)?,
                     r.get(4)?,
                     r.get(5)?,
+                    r.get(6)?,
                 ))
             },
         )
@@ -148,6 +161,8 @@ fn test_migration_from_v1_to_current_preserves_all_data() {
     assert!(is_fav);
     assert_eq!(pref_ide, Some("code".to_string()));
     assert_eq!(tags, "[\"frontend\", \"web\"]");
+    // p1 is not under scan root sr1 (/home/user/projects), but enriched with favorite and tags, so it is archived
+    assert!(is_archived);
 
     // 6. Verify scan roots preserved
     let (sr_id, sr_path): (String, String) = conn
@@ -218,7 +233,7 @@ fn test_migration_from_empty_database() {
             |r| r.get(0),
         )
         .unwrap();
-    assert_eq!(version, 5);
+    assert_eq!(version, 8);
 
     // Verify all tables exist
     let tables: Vec<String> = {

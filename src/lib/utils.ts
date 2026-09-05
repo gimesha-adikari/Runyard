@@ -93,3 +93,10 @@ export function getErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
   return String(error);
 }
+
+export function isPathAncestorOrEqual(parent: string, child: string): boolean {
+  const normParent = parent.replace(/[/\\]+$/, '');
+  const normChild = child.replace(/[/\\]+$/, '');
+  if (normChild === normParent) return true;
+  return normChild.startsWith(normParent + '/') || normChild.startsWith(normParent + '\\');
+}

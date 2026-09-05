@@ -27,7 +27,7 @@ pub fn detect_ides() -> Vec<DetectedIde> {
     ];
 
     for (cmd, name, via) in binary_checks.iter() {
-        if !seen_ids.contains(&cmd.to_string()) && is_command_available(cmd) {
+        if !seen_ids.contains(*cmd) && is_command_available(cmd) {
             seen_ids.insert(cmd.to_string());
             ides.push(DetectedIde {
                 id: cmd.to_string(),
@@ -70,7 +70,7 @@ pub fn detect_ides() -> Vec<DetectedIde> {
     ];
 
     for (app_id, name, exec) in flatpak_apps {
-        if !seen_ids.contains(&app_id.to_string()) {
+        if !seen_ids.contains(app_id) {
             let desktop_path = format!(
                 "/var/lib/flatpak/exports/share/applications/{}.desktop",
                 app_id

@@ -1,6 +1,6 @@
 {
   "productName": "Runyard",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "identifier": "com.runyard.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -14,8 +14,9 @@
         "title": "Runyard",
         "width": 1280,
         "height": 800,
-        "minWidth": 900,
-        "minHeight": 600
+        "minWidth": 720,
+        "minHeight": 580,
+        "decorations": false
       }
     ],
     "security": {

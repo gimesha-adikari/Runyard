@@ -5,6 +5,30 @@ pub fn detect_run_configs(project_path: &str) -> Vec<DetectedRunConfig> {
     let p = Path::new(project_path);
     let mut configs = Vec::new();
 
+    // Noise suppression: do not detect run configs in scratch/test-corpus/fixtures/benchmarks
+    if crate::scanner::is_noise_path(p) {
+        return Vec::new();
+    }
+
+    // Custom Project Scripts (e.g. run_dev.sh)
+    let scripts = crate::script_detector::detect_project_scripts(p, "");
+    for s in scripts {
+        let (cmd, args) = if let Some((first, rest)) = s.command.split_once(' ') {
+            (first.to_string(), vec![rest.to_string()])
+        } else {
+            (s.command.clone(), Vec::new())
+        };
+        configs.push(DetectedRunConfig {
+            service_id: None,
+            service_name: None,
+            name: s.name.clone(),
+            command: cmd,
+            args,
+            working_dir: Some(project_path.to_string()),
+            source_file: s.name,
+        });
+    }
+
     // Node.js
     if p.join("package.json").exists() {
         let pkg_mgr = if p.join("pnpm-lock.yaml").exists() {

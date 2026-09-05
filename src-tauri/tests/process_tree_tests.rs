@@ -30,7 +30,8 @@ async fn test_process_natural_exit_zero_and_nonzero() {
     };
     config_zero.trusted_fingerprint = Some(config_zero.compute_fingerprint());
 
-    let pid_zero = pm.start_process("p1", config_zero).await.unwrap();
+    let proc_zero = pm.start_process("p1", config_zero).await.unwrap();
+    let pid_zero = proc_zero.id;
     sleep(Duration::from_millis(300)).await;
 
     let procs = pm.get_all_processes().await;
@@ -57,7 +58,8 @@ async fn test_process_natural_exit_zero_and_nonzero() {
     };
     config_nonzero.trusted_fingerprint = Some(config_nonzero.compute_fingerprint());
 
-    let pid_nonzero = pm.start_process("p1", config_nonzero).await.unwrap();
+    let proc_nonzero = pm.start_process("p1", config_nonzero).await.unwrap();
+    let pid_nonzero = proc_nonzero.id;
     sleep(Duration::from_millis(300)).await;
 
     let procs = pm.get_all_processes().await;
@@ -142,7 +144,8 @@ async fn test_unix_process_tree_cleanup() {
     };
     config.trusted_fingerprint = Some(config.compute_fingerprint());
 
-    let proc_id = pm.start_process("p1", config).await.unwrap();
+    let proc_info = pm.start_process("p1", config).await.unwrap();
+    let proc_id = proc_info.id;
 
     // Wait for child PID to be written
     let mut child_pid: Option<i32> = None;
@@ -215,7 +218,8 @@ async fn test_bounded_output_buffer() {
     };
     config.trusted_fingerprint = Some(config.compute_fingerprint());
 
-    let proc_id = pm.start_process("p1", config).await.unwrap();
+    let proc_info = pm.start_process("p1", config).await.unwrap();
+    let proc_id = proc_info.id;
     sleep(Duration::from_millis(800)).await;
 
     let output = pm.get_output(&proc_id, 0).await;

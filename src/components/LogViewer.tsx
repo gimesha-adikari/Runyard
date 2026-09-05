@@ -10,6 +10,35 @@ import {
   Check,
 } from 'lucide-react';
 import { getErrorMessage, cn } from '../lib/utils';
+import { open as openUrl } from '@tauri-apps/plugin-shell';
+
+const URL_REGEX = /(https?:\/\/(?:localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|[a-zA-Z0-9.-]+)(?::\d+)?(?:\/[^\s"']*)?)/g;
+
+function renderLogContent(text: unknown) {
+  const content = typeof text === 'string' ? text : String(text ?? '');
+  const parts = content.split(URL_REGEX);
+  if (parts.length === 1) return content;
+
+  return parts.map((part, index) => {
+    if (part.match(URL_REGEX)) {
+      return (
+        <a
+          key={index}
+          href={part}
+          onClick={(e) => {
+            e.preventDefault();
+            openUrl(part).catch((err) => console.error('Failed to open URL:', err));
+          }}
+          className="text-emerald-400 hover:text-emerald-300 underline underline-offset-2 cursor-pointer font-semibold transition-colors"
+          title={`Click to open ${part} in browser`}
+        >
+          {part}
+        </a>
+      );
+    }
+    return part;
+  });
+}
 
 interface LogViewerProps {
   processId: string;
@@ -172,7 +201,7 @@ export const LogViewer: React.FC<LogViewerProps> = ({ processId, className }) =>
                     isStderr ? 'text-red-400' : 'text-zinc-300'
                   )}
                 >
-                  {line.content}
+                  {renderLogContent(line.content)}
                 </span>
               </div>
             );

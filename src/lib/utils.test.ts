@@ -6,6 +6,7 @@ import {
   truncatePath,
   getStatusColor,
   cn,
+  isPathAncestorOrEqual,
 } from './utils.ts';
 
 test('formatElapsedDuration formats seconds, minutes, hours correctly', () => {
@@ -55,3 +56,26 @@ test('getStatusColor returns appropriate tailwind class', () => {
 test('cn merges classes cleanly', () => {
   assert.equal(cn('px-2', 'py-1', { 'text-red-500': true, 'text-blue-500': false }), 'px-2 py-1 text-red-500');
 });
+
+test('isPathAncestorOrEqual correctly identifies path ancestry and rejects prefix traps', () => {
+  // Direct equals
+  assert.equal(isPathAncestorOrEqual('/tmp/foo', '/tmp/foo'), true);
+  assert.equal(isPathAncestorOrEqual('/tmp/foo/', '/tmp/foo'), true);
+  assert.equal(isPathAncestorOrEqual('/tmp/foo', '/tmp/foo/'), true);
+
+  // Legitimate child
+  assert.equal(isPathAncestorOrEqual('/tmp/foo', '/tmp/foo/child'), true);
+  assert.equal(isPathAncestorOrEqual('/tmp/foo', '/tmp/foo/child/grandchild'), true);
+
+  // String prefix trap (e.g. /tmp/foobar must NOT be considered under /tmp/foo)
+  assert.equal(isPathAncestorOrEqual('/tmp/foo', '/tmp/foobar'), false);
+  assert.equal(isPathAncestorOrEqual('/tmp/foo', '/tmp/foobar/child'), false);
+
+  // Unrelated paths
+  assert.equal(isPathAncestorOrEqual('/tmp/workspace', '/var/workspace'), false);
+
+  // Windows-style backslashes
+  assert.equal(isPathAncestorOrEqual('C:\\projects\\app', 'C:\\projects\\app\\sub'), true);
+  assert.equal(isPathAncestorOrEqual('C:\\projects\\app', 'C:\\projects\\app-backup'), false);
+});
+

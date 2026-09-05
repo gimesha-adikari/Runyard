@@ -22,6 +22,7 @@ export function useAddScanRoot() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['scanRoots'] });
       queryClient.invalidateQueries({ queryKey: ['settings'] });
+      queryClient.invalidateQueries({ queryKey: ['projects'] });
     },
   });
 }
@@ -33,6 +34,9 @@ export function useRemoveScanRoot() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['scanRoots'] });
       queryClient.invalidateQueries({ queryKey: ['settings'] });
+      queryClient.invalidateQueries({ queryKey: ['projects'] });
+      queryClient.invalidateQueries({ queryKey: ['allServices'] });
+      queryClient.invalidateQueries({ queryKey: ['processes'] });
     },
   });
 }

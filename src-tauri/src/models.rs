@@ -28,6 +28,20 @@ pub struct Project {
     pub source: ProjectSource,
     pub parent_project_id: Option<String>,
     pub is_runnable: bool,
+    #[serde(default)]
+    pub is_archived: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum ServiceSource {
+    Detected,
+    Manual,
+}
+
+impl Default for ServiceSource {
+    fn default() -> Self {
+        ServiceSource::Detected
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -40,7 +54,53 @@ pub struct Service {
     pub languages: Vec<String>,
     pub frameworks: Vec<String>,
     pub is_runnable: bool,
+    #[serde(default)]
+    pub source: ServiceSource,
     pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum ScriptKind {
+    DevelopmentServer,
+    ApplicationStart,
+    MultiServiceLauncher,
+    InfrastructureTask,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum ScriptConfidence {
+    High,
+    Medium,
+    Low,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum ScriptExecutionMode {
+    Background,
+    TerminalRequired,
+}
+
+impl Default for ScriptExecutionMode {
+    fn default() -> Self {
+        ScriptExecutionMode::Background
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProjectScript {
+    pub id: String,
+    pub project_id: String,
+    pub name: String,
+    pub relative_path: String,
+    pub command: String,
+    pub script_kind: ScriptKind,
+    pub confidence: ScriptConfidence,
+    #[serde(default)]
+    pub execution_mode: ScriptExecutionMode,
+    pub evidence: Vec<String>,
+    pub is_trusted: bool,
+    #[serde(default)]
+    pub trusted_fingerprint: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -125,7 +185,108 @@ pub struct RunConfiguration {
 }
 
 impl RunConfiguration {
+    pub fn extract_script_candidate_token(&self) -> Option<String> {
+        let cmd = self.command.trim();
+        if cmd.is_empty() {
+            return None;
+        }
+
+        // Case 1: Direct script reference (starts with ./ or has script extension)
+        let is_script_ext = |s: &str| {
+            let lower = s.to_lowercase();
+            lower.ends_with(".sh")
+                || lower.ends_with(".bash")
+                || lower.ends_with(".zsh")
+                || lower.ends_with(".py")
+                || lower.ends_with(".js")
+                || lower.ends_with(".mjs")
+                || lower.ends_with(".cjs")
+                || lower.ends_with(".ts")
+        };
+
+        let words: Vec<&str> = cmd.split_whitespace().collect();
+        if words.is_empty() {
+            return None;
+        }
+
+        let is_interpreter = |w: &str| {
+            matches!(
+                w.to_lowercase().as_str(),
+                "bash" | "sh" | "zsh" | "python" | "python3" | "node" | "ts-node" | "deno" | "bun"
+            )
+        };
+
+        if words.len() >= 2 && is_interpreter(words[0]) {
+            let target = words[1];
+            if target.starts_with("./") || is_script_ext(target) {
+                return Some(target.to_string());
+            }
+        }
+
+        if words.len() == 1 && is_interpreter(words[0]) && !self.args.is_empty() {
+            let first_arg = &self.args[0];
+            if first_arg.starts_with("./") || is_script_ext(first_arg) {
+                return Some(first_arg.to_string());
+            }
+        }
+
+        if words[0].starts_with("./") || is_script_ext(words[0]) {
+            return Some(words[0].to_string());
+        }
+
+        None
+    }
+
+    pub fn resolve_script_path(
+        &self,
+        base_dir: Option<&std::path::Path>,
+    ) -> Result<Option<std::path::PathBuf>, &'static str> {
+        let candidate_token = match self.extract_script_candidate_token() {
+            Some(t) => t,
+            None => return Ok(None),
+        };
+
+        let base = match base_dir {
+            Some(b) => b,
+            None => return Err("Base directory not provided for script resolution"),
+        };
+
+        // Reject path traversal via parent directory components
+        let candidate_path = std::path::Path::new(&candidate_token);
+        for comp in candidate_path.components() {
+            if matches!(comp, std::path::Component::ParentDir) {
+                return Err("Path traversal rejected");
+            }
+        }
+
+        let target_full = if candidate_path.is_absolute() {
+            candidate_path.to_path_buf()
+        } else {
+            base.join(candidate_path)
+        };
+
+        if !target_full.exists() || !target_full.is_file() {
+            return Err("Script file does not exist");
+        }
+
+        let canonical_base = base.canonicalize().map_err(|_| "Invalid base directory")?;
+        let canonical_target = target_full
+            .canonicalize()
+            .map_err(|_| "Cannot canonicalize script target")?;
+
+        if !canonical_target.starts_with(&canonical_base) {
+            return Err("Script target escapes project root");
+        }
+
+        Ok(Some(canonical_target))
+    }
+
     pub fn compute_fingerprint(&self) -> String {
+        let base = self.working_dir.as_deref().map(std::path::Path::new);
+        self.compute_fingerprint_with_base(base)
+    }
+
+    pub fn compute_fingerprint_with_base(&self, base_dir: Option<&std::path::Path>) -> String {
         use sha2::{Digest, Sha256};
         let mut hasher = Sha256::new();
         hasher.update(self.command.trim().as_bytes());
@@ -152,15 +313,40 @@ impl RunConfiguration {
             }
             hasher.update(b"\0");
         }
+
+        // Bind trust to executable script content bytes when targeting a script
+        match self.resolve_script_path(base_dir) {
+            Ok(Some(script_path)) => match std::fs::read(&script_path) {
+                Ok(bytes) => {
+                    let script_hash = format!("{:x}", Sha256::digest(&bytes));
+                    hasher.update(b"\0script_content_sha256=");
+                    hasher.update(script_hash.as_bytes());
+                }
+                Err(_) => {
+                    hasher.update(b"\0script_read_error");
+                }
+            },
+            Err(reason) => {
+                hasher.update(b"\0script_resolution_error=");
+                hasher.update(reason.as_bytes());
+            }
+            Ok(None) => {}
+        }
+
         format!("{:x}", hasher.finalize())
     }
 
     pub fn is_trust_valid(&self) -> bool {
+        let base = self.working_dir.as_deref().map(std::path::Path::new);
+        self.is_trust_valid_with_base(base)
+    }
+
+    pub fn is_trust_valid_with_base(&self, base_dir: Option<&std::path::Path>) -> bool {
         if !self.is_trusted {
             return false;
         }
         match &self.trusted_fingerprint {
-            Some(expected) => expected == &self.compute_fingerprint(),
+            Some(expected) => expected == &self.compute_fingerprint_with_base(base_dir),
             None => false,
         }
     }
@@ -192,6 +378,8 @@ pub struct ProcessInfo {
     pub status: ProcessStatus,
     pub started_at: String,
     pub exit_code: Option<i32>,
+    #[serde(default)]
+    pub pty_session_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

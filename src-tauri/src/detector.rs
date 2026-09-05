@@ -8,13 +8,11 @@ pub struct DetectionResult {
 
 pub fn detect_project_type(path: &str) -> DetectionResult {
     let p = Path::new(path);
-    let mut project_type = None;
     let mut languages = Vec::new();
     let mut frameworks = Vec::new();
 
     // Node / JS / TS
     if p.join("package.json").exists() {
-        project_type = Some("node".to_string());
         if p.join("tsconfig.json").exists() {
             languages.push("TypeScript".to_string());
         } else {
@@ -77,7 +75,6 @@ pub fn detect_project_type(path: &str) -> DetectionResult {
 
     // Rust
     if p.join("Cargo.toml").exists() {
-        project_type = Some("rust".to_string());
         if !languages.contains(&"Rust".to_string()) {
             languages.push("Rust".to_string());
         }
@@ -102,7 +99,6 @@ pub fn detect_project_type(path: &str) -> DetectionResult {
 
     // Go
     if p.join("go.mod").exists() {
-        project_type = Some("go".to_string());
         if !languages.contains(&"Go".to_string()) {
             languages.push("Go".to_string());
         }
@@ -124,7 +120,6 @@ pub fn detect_project_type(path: &str) -> DetectionResult {
         || p.join("requirements.txt").exists()
         || p.join("Pipfile").exists()
     {
-        project_type = Some("python".to_string());
         if !languages.contains(&"Python".to_string()) {
             languages.push("Python".to_string());
         }
@@ -165,7 +160,6 @@ pub fn detect_project_type(path: &str) -> DetectionResult {
 
     // Java
     if p.join("pom.xml").exists() {
-        project_type = Some("java-maven".to_string());
         if !languages.contains(&"Java".to_string()) {
             languages.push("Java".to_string());
         }
@@ -178,7 +172,6 @@ pub fn detect_project_type(path: &str) -> DetectionResult {
             }
         }
     } else if p.join("build.gradle").exists() || p.join("build.gradle.kts").exists() {
-        project_type = Some("java-gradle".to_string());
         let lang = if p.join("build.gradle.kts").exists() {
             "Kotlin"
         } else {
@@ -204,7 +197,6 @@ pub fn detect_project_type(path: &str) -> DetectionResult {
         for e in entries.flatten() {
             if let Some(ext) = e.path().extension().and_then(|s| s.to_str()) {
                 if ext == "sln" || ext == "csproj" || ext == "fsproj" {
-                    project_type = Some("dotnet".to_string());
                     let lang = if ext == "fsproj" { "F#" } else { "C#" };
                     if !languages.contains(&lang.to_string()) {
                         languages.push(lang.to_string());

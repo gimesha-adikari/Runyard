@@ -2,17 +2,26 @@ import { getErrorMessage } from '../lib/utils';
 import React, { useEffect, useRef, useState } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
+import { WebLinksAddon } from '@xterm/addon-web-links';
+import { open as openUrl } from '@tauri-apps/plugin-shell';
 import '@xterm/xterm/css/xterm.css';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
 import { tauriApi } from '../lib/tauri';
-import { Terminal as TermIcon, RefreshCw, Eraser, AlertCircle } from 'lucide-react';
+import { AlertCircle, RefreshCw } from 'lucide-react';
 
 interface TerminalViewProps {
   projectPath: string;
   className?: string;
+  onRegisterControls?: (controls: { clear: () => void; restart: () => void }) => void;
+  customSessionId?: string | null;
 }
 
-export const TerminalView: React.FC<TerminalViewProps> = ({ projectPath, className }) => {
+export const TerminalView: React.FC<TerminalViewProps> = ({
+  projectPath,
+  className,
+  onRegisterControls,
+  customSessionId,
+}) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
@@ -20,14 +29,21 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ projectPath, classNa
   const [error, setError] = useState<string | null>(null);
   const [isInitializing, setIsInitializing] = useState(true);
 
+  const projectPathRef = useRef(projectPath);
+  useEffect(() => {
+    projectPathRef.current = projectPath;
+  }, [projectPath]);
+
   const cleanupSession = async () => {
     if (sessionIdRef.current) {
       const sid = sessionIdRef.current;
       sessionIdRef.current = null;
-      try {
-        await tauriApi.closePtySession(sid);
-      } catch {
-        // Ignore session already closed error
+      if (!customSessionId) {
+        try {
+          await tauriApi.closePtySession(sid);
+        } catch {
+          // Ignore session already closed error
+        }
       }
     }
     if (terminalRef.current) {
@@ -38,7 +54,8 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ projectPath, classNa
   };
 
   const initTerminal = async () => {
-    if (!containerRef.current) return;
+    const targetPath = projectPathRef.current;
+    if (!containerRef.current || !targetPath) return;
     setIsInitializing(true);
     setError(null);
 
@@ -82,6 +99,12 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ projectPath, classNa
       const fitAddon = new FitAddon();
       term.loadAddon(fitAddon);
 
+      // Make URLs clickable in terminal, opening via system browser
+      const webLinksAddon = new WebLinksAddon((_event, uri) => {
+        openUrl(uri).catch((e) => console.error('Failed to open link from terminal:', e));
+      });
+      term.loadAddon(webLinksAddon);
+
       containerRef.current.innerHTML = '';
       term.open(containerRef.current);
 
@@ -99,7 +122,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ projectPath, classNa
       const cols = Math.max(20, term.cols || 80);
       const rows = Math.max(5, term.rows || 24);
 
-      const sessionId = await tauriApi.createPtySession(projectPath, cols, rows);
+      const sessionId = customSessionId || (await tauriApi.createPtySession(targetPath, cols, rows));
       sessionIdRef.current = sessionId;
 
       const unlistenData: UnlistenFn = await listen<string>(`pty-data-${sessionId}`, (event) => {
@@ -121,6 +144,10 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ projectPath, classNa
           tauriApi.resizePtySession(sessionIdRef.current, size.cols, size.rows).catch(() => {});
         }
       });
+
+      if (customSessionId) {
+        tauriApi.resizePtySession(sessionId, cols, rows).catch(() => {});
+      }
 
       setIsInitializing(false);
       term.focus();
@@ -159,7 +186,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ projectPath, classNa
         try {
           fitAddonRef.current.fit();
         } catch {
-        // Ignore session already closed error
+          // Ignore session already closed error
         }
       }
     };
@@ -181,53 +208,36 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ projectPath, classNa
       if (unlisteners) unlisteners();
       cleanupSession();
     };
-  }, [projectPath]);
+  }, [customSessionId]);
+
+  useEffect(() => {
+    if (onRegisterControls) {
+      onRegisterControls({
+        clear: handleClear,
+        restart: initTerminal,
+      });
+    }
+  }, [onRegisterControls]);
 
   return (
-    <div className={`flex flex-col h-[520px] bg-zinc-950 border border-zinc-800 rounded-xl overflow-hidden ${className || ''}`}>
-      <div className="flex items-center justify-between px-4 py-2.5 bg-zinc-900 border-b border-zinc-800 text-xs text-zinc-400 shrink-0">
-        <div className="flex items-center gap-2 min-w-0">
-          <TermIcon className="w-4 h-4 text-emerald-400 shrink-0" />
-          <span className="font-mono text-zinc-300 truncate text-[11px]">{projectPath}</span>
-        </div>
-
-        <div className="flex items-center gap-1.5 shrink-0">
-          <button
-            onClick={handleClear}
-            className="flex items-center gap-1 px-2.5 py-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded text-xs transition-colors"
-            title="Clear Screen"
-          >
-            <Eraser className="w-3.5 h-3.5" />
-            <span>Clear</span>
-          </button>
-          <button
-            onClick={initTerminal}
-            className="flex items-center gap-1 px-2.5 py-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded text-xs transition-colors"
-            title="Restart Terminal Session"
-          >
-            <RefreshCw className="w-3.5 h-3.5" />
-            <span>Restart</span>
-          </button>
-        </div>
-      </div>
-
+    <div className={`flex flex-col h-full w-full bg-[#09090b] overflow-hidden relative ${className || ''}`}>
       {error ? (
-        <div className="flex-1 flex flex-col items-center justify-center p-6 text-center text-zinc-400">
+        <div className="flex-1 flex flex-col items-center justify-center p-6 text-center text-zinc-400 font-mono">
           <AlertCircle className="w-8 h-8 text-red-400 mb-2" />
           <p className="text-sm font-semibold text-zinc-200 mb-1">Failed to initialize terminal session</p>
-          <p className="text-xs font-mono text-zinc-500 max-w-md mb-4 break-words">{error}</p>
+          <p className="text-xs text-zinc-500 max-w-md mb-4 break-words">{error}</p>
           <button
             onClick={initTerminal}
-            className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium rounded-md transition-colors flex items-center gap-1.5"
+            className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium rounded transition-colors flex items-center gap-1.5"
           >
             <RefreshCw className="w-3.5 h-3.5" />
             <span>Retry Shell Connection</span>
           </button>
         </div>
       ) : (
-        <div className="flex-1 relative p-2 overflow-hidden">
+        <div className="flex-1 relative p-1.5 overflow-hidden">
           {isInitializing && (
-            <div className="absolute inset-0 bg-zinc-950/80 flex items-center justify-center z-10 text-xs text-zinc-400">
+            <div className="absolute inset-0 bg-zinc-950/80 flex items-center justify-center z-10 text-xs text-zinc-400 font-mono">
               Initializing interactive shell...
             </div>
           )}

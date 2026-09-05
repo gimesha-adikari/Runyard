@@ -50,6 +50,7 @@ export function useTrustRunConfig() {
     mutationFn: (vars: { id: string; projectId: string }) => tauriApi.trustRunConfig(vars.id),
     onSuccess: (_, vars) => {
       queryClient.invalidateQueries({ queryKey: ['runConfigs', vars.projectId] });
+      queryClient.invalidateQueries({ queryKey: ['projects', vars.projectId, 'scripts'] });
     },
   });
 }

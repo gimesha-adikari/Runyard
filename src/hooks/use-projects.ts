@@ -102,3 +102,15 @@ export function useProjectServices(projectId: string) {
     enabled: !!projectId,
   });
 }
+
+export function useProjectScripts(projectPath: string | undefined, projectId?: string) {
+  return useQuery({
+    queryKey: ['projects', projectId, 'scripts', projectPath],
+    queryFn: () => {
+      if (!projectPath) throw new Error('No project path provided');
+      return tauriApi.detectProjectScripts(projectPath, projectId);
+    },
+    enabled: !!projectPath,
+  });
+}
+

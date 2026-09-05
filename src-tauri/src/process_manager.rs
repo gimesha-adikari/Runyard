@@ -31,6 +31,12 @@ pub struct ProcessManager {
     output_buffers: Arc<Mutex<HashMap<String, VecDeque<OutputLine>>>>,
 }
 
+impl Default for ProcessManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ProcessManager {
     pub fn new() -> Self {
         Self {
@@ -43,7 +49,7 @@ impl ProcessManager {
         &self,
         project_id: &str,
         run_config: RunConfiguration,
-    ) -> Result<String> {
+    ) -> Result<ProcessInfo> {
         let process_id = uuid::Uuid::new_v4().to_string();
 
         let working_dir = if let Some(ref wd) = run_config.working_dir {
@@ -103,7 +109,10 @@ impl ProcessManager {
             status: ProcessStatus::Running,
             started_at: chrono::Utc::now().to_rfc3339(),
             exit_code: None,
+            pty_session_id: None,
         };
+
+        let return_info = info.clone();
 
         {
             let mut procs = self.processes.lock().await;
@@ -187,7 +196,7 @@ impl ProcessManager {
             exit_notify.notify_waiters();
         });
 
-        Ok(process_id)
+        Ok(return_info)
     }
 
     pub async fn stop_process(&self, process_id: &str) -> Result<()> {
@@ -224,7 +233,8 @@ impl ProcessManager {
             {
                 if pid > 1 {
                     unsafe {
-                        libc::kill(-(pid as i32), libc::SIGTERM);
+                        let _ = libc::kill(-(pid as i32), libc::SIGTERM);
+                        let _ = libc::kill(pid as i32, libc::SIGTERM);
                     }
                 }
             }
@@ -239,7 +249,8 @@ impl ProcessManager {
                 {
                     if pid > 1 {
                         unsafe {
-                            libc::kill(-(pid as i32), libc::SIGKILL);
+                            let _ = libc::kill(-(pid as i32), libc::SIGKILL);
+                            let _ = libc::kill(pid as i32, libc::SIGKILL);
                         }
                     }
                 }
@@ -294,5 +305,51 @@ impl ProcessManager {
             buf.clear();
         }
         Ok(())
+    }
+
+    pub async fn register_pty_process(
+        &self,
+        project_id: &str,
+        run_config: &RunConfiguration,
+        pid: u32,
+        pty_session_id: &str,
+    ) -> Result<ProcessInfo> {
+        let process_id = uuid::Uuid::new_v4().to_string();
+
+        let return_info = ProcessInfo {
+            id: process_id.clone(),
+            project_id: project_id.to_string(),
+            service_id: run_config.service_id.clone(),
+            run_config_id: run_config.id.clone(),
+            run_config_name: run_config.name.clone(),
+            pid: if pid > 0 { Some(pid) } else { None },
+            status: ProcessStatus::Running,
+            started_at: chrono::Utc::now().to_rfc3339(),
+            exit_code: None,
+            pty_session_id: Some(pty_session_id.to_string()),
+        };
+
+        let mp = ManagedProcess {
+            info: return_info.clone(),
+            exit_notify: Arc::new(Notify::new()),
+            stop_requested: Arc::new(AtomicBool::new(false)),
+        };
+
+        let mut procs = self.processes.lock().await;
+        procs.insert(process_id, mp);
+
+        Ok(return_info)
+    }
+
+    pub async fn mark_process_exited(&self, process_id: &str, exit_code: i32) {
+        let mut procs = self.processes.lock().await;
+        if let Some(mp) = procs.get_mut(process_id) {
+            if mp.info.status == ProcessStatus::Running || mp.info.status == ProcessStatus::Starting
+            {
+                mp.info.status = ProcessStatus::Exited;
+                mp.info.exit_code = Some(exit_code);
+                mp.exit_notify.notify_waiters();
+            }
+        }
     }
 }

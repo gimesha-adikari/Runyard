@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { tauriApi } from '../lib/tauri';
+import type { ProcessInfo } from '../types';
 
 export function useProcesses() {
   return useQuery({
@@ -23,7 +24,7 @@ export function useProcessOutput(processId: string | undefined, sinceLine: numbe
 
 export function useRunUntrustedOnce() {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useMutation<ProcessInfo, Error, string>({
     mutationFn: (runConfigId: string) => tauriApi.runUntrustedOnce(runConfigId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['processes'] });
@@ -33,7 +34,7 @@ export function useRunUntrustedOnce() {
 
 export function useStartProcess() {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useMutation<ProcessInfo, Error, string>({
     mutationFn: (runConfigId: string) => tauriApi.startProcess(runConfigId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['processes'] });

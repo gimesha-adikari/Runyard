@@ -5,6 +5,9 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import App from './App';
 import './index.css';
 
+import { useUiStore } from './stores/ui-store';
+import { tauriApi } from './lib/tauri';
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -13,6 +16,13 @@ const queryClient = new QueryClient({
     },
   },
 });
+
+if (import.meta.env.DEV) {
+  (window as any).__QUERY_CLIENT__ = queryClient;
+  (window as any).__UI_STORE__ = useUiStore;
+  (window as any).useUiStore = useUiStore;
+  (window as any).tauriApi = tauriApi;
+}
 
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <React.StrictMode>

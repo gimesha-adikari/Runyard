@@ -7,29 +7,40 @@ pub mod ide;
 pub mod models;
 pub mod process_manager;
 pub mod pty;
-mod reconcile;
+pub mod reconcile;
 pub mod runtime_detector;
+pub mod scan_coordinator;
 pub mod scanner;
+pub mod script_detector;
 
 use process_manager::ProcessManager;
 use pty::PtyManager;
+use scan_coordinator::ScanCoordinator;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
 pub type ProcessManagerState = Arc<Mutex<ProcessManager>>;
 pub type PtyManagerState = Arc<PtyManager>;
+pub type ScanCoordinatorState = Arc<ScanCoordinator>;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let process_manager = Arc::new(Mutex::new(ProcessManager::new()));
     let pty_manager = Arc::new(PtyManager::new());
+    let scan_coordinator = Arc::new(ScanCoordinator::new());
 
     let pm_clone = process_manager.clone();
     let pty_clone = pty_manager.clone();
+    let sc_clone = scan_coordinator.clone();
 
     let app = tauri::Builder::default()
         .manage(process_manager)
         .manage(pty_manager)
+        .manage(scan_coordinator)
+        .setup(move |app| {
+            sc_clone.start(Some(app.handle().clone()));
+            Ok(())
+        })
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
@@ -39,6 +50,8 @@ pub fn run() {
             commands::import_project,
             commands::remove_project,
             commands::scan_projects,
+            commands::rescan_root,
+            commands::get_scan_status,
             commands::toggle_favorite,
             commands::update_project_tags,
             commands::set_project_ide,
@@ -68,6 +81,9 @@ pub fn run() {
             commands::set_default_ide,
             commands::get_run_configs,
             commands::detect_run_configs,
+            commands::detect_project_scripts,
+            commands::inspect_script_detection,
+            commands::get_or_create_script_run_config,
             commands::save_run_config,
             commands::delete_run_config,
             commands::trust_run_config,
